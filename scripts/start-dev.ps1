@@ -126,10 +126,18 @@ try {
 
     if (-not $NoProxmox) {
         $env:MANAGEMENT_PROXMOX_API_URL = 'https://192.0.2.10:8006'
-        $secureSecret = Read-Host 'Секрет foundry-ro@pve!Audit (пустой ввод — без Proxmox)' -AsSecureString
-        $secret = [System.Net.NetworkCredential]::new('', $secureSecret).Password
-        if (-not [string]::IsNullOrWhiteSpace($secret)) {
-            $env:MANAGEMENT_PROXMOX_API_TOKEN = "foundry-ro@pve!Audit=$secret"
+        $secureToken = Read-Host 'Секрет Audit ИЛИ полный токен user@realm!id=secret (пустой ввод — без Proxmox)' -AsSecureString
+        $tokenInput = [System.Net.NetworkCredential]::new('', $secureToken).Password.Trim()
+        if ($tokenInput.StartsWith('PVEAPIToken=')) {
+            $tokenInput = $tokenInput.Substring('PVEAPIToken='.Length)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($tokenInput)) {
+            if ($tokenInput.Contains('@') -and $tokenInput.Contains('!') -and $tokenInput.Contains('=')) {
+                $env:MANAGEMENT_PROXMOX_API_TOKEN = $tokenInput
+            }
+            else {
+                $env:MANAGEMENT_PROXMOX_API_TOKEN = "foundry-ro@pve!Audit=$tokenInput"
+            }
             if ([string]::IsNullOrWhiteSpace($env:MANAGEMENT_PROXMOX_CA_FILE)) {
                 $env:MANAGEMENT_PROXMOX_INSECURE_SKIP_VERIFY = 'true'
             }
@@ -138,7 +146,7 @@ try {
         else {
             Write-Host 'Proxmox не настроен: панель покажет соответствующее состояние.' -ForegroundColor Yellow
         }
-        Remove-Variable secureSecret, secret -ErrorAction SilentlyContinue
+        Remove-Variable secureToken, tokenInput -ErrorAction SilentlyContinue
     }
     else {
         Write-Host 'Запуск без Proxmox (-NoProxmox).' -ForegroundColor Yellow
