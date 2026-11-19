@@ -120,33 +120,52 @@ try {
     $env:MANAGEMENT_DATABASE_URL = 'postgres://postgres@127.0.0.1:55432/orchestrator?sslmode=disable'
     $env:MANAGEMENT_AUTH_KEY = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
     $env:MANAGEMENT_ENCRYPTION_KEY = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB='
+    $configuredProxmoxUrl = $env:MANAGEMENT_PROXMOX_API_URL
     Remove-Item Env:MANAGEMENT_PROXMOX_API_URL -ErrorAction SilentlyContinue
     Remove-Item Env:MANAGEMENT_PROXMOX_API_TOKEN -ErrorAction SilentlyContinue
     Remove-Item Env:MANAGEMENT_PROXMOX_INSECURE_SKIP_VERIFY -ErrorAction SilentlyContinue
 
     if (-not $NoProxmox) {
-        $env:MANAGEMENT_PROXMOX_API_URL = 'https://192.0.2.10:8006'
-        $secureToken = Read-Host 'Секрет Audit ИЛИ полный токен user@realm!id=secret (пустой ввод — без Proxmox)' -AsSecureString
-        $tokenInput = [System.Net.NetworkCredential]::new('', $secureToken).Password.Trim()
-        if ($tokenInput.StartsWith('PVEAPIToken=')) {
-            $tokenInput = $tokenInput.Substring('PVEAPIToken='.Length)
+        $defaultProxmoxUrl = if (-not [string]::IsNullOrWhiteSpace($configuredProxmoxUrl)) { $configuredProxmoxUrl } else { 'https://pve.example.local:8006' }
+        $proxmoxUrl = (Read-Host "Proxmox API URL [$defaultProxmoxUrl]").Trim()
+        if ([string]::IsNullOrWhiteSpace($proxmoxUrl)) { $proxmoxUrl = $defaultProxmoxUrl }
+        try {
+            $parsedProxmoxUrl = [System.Uri]$proxmoxUrl
+            if (-not $parsedProxmoxUrl.IsAbsoluteUri -or $parsedProxmoxUrl.Scheme -ne 'https') {
+                throw 'Invalid Proxmox API URL'
+            }
         }
-        if (-not [string]::IsNullOrWhiteSpace($tokenInput)) {
-            if ($tokenInput.Contains('@') -and $tokenInput.Contains('!') -and $tokenInput.Contains('=')) {
-                $env:MANAGEMENT_PROXMOX_API_TOKEN = $tokenInput
-            }
-            else {
-                $env:MANAGEMENT_PROXMOX_API_TOKEN = "foundry-ro@pve!Audit=$tokenInput"
-            }
+        catch {
+            throw 'Укажите полный HTTPS URL, например https://pve.example.local:8006'
+        }
+        $env:MANAGEMENT_PROXMOX_API_URL = $proxmoxUrl.TrimEnd('/')
+
+        $tokenUser = (Read-Host 'Пользователь Proxmox [foundry-ro@pve]').Trim()
+        if ([string]::IsNullOrWhiteSpace($tokenUser)) { $tokenUser = 'foundry-ro@pve' }
+        if (-not $tokenUser.Contains('@') -or $tokenUser.Contains('!') -or $tokenUser.Contains('=')) {
+            throw 'Пользователь должен иметь формат name@pve, например foundry-rw@pve'
+        }
+
+        $defaultTokenName = if ($tokenUser -eq 'foundry-rw@pve') { 'OpenTofu' } else { 'Audit' }
+        $tokenName = (Read-Host "Имя токена [$defaultTokenName]").Trim()
+        if ([string]::IsNullOrWhiteSpace($tokenName)) { $tokenName = $defaultTokenName }
+        if ($tokenName.Contains('!') -or $tokenName.Contains('=') -or $tokenName.Contains(' ')) {
+            throw 'Введите только имя токена, например OpenTofu или Audit'
+        }
+
+        $secureSecret = Read-Host 'Секретный код токена (только код после =; пустой ввод — без Proxmox)' -AsSecureString
+        $secret = [System.Net.NetworkCredential]::new('', $secureSecret).Password.Trim()
+        if (-not [string]::IsNullOrWhiteSpace($secret)) {
+            $env:MANAGEMENT_PROXMOX_API_TOKEN = "$tokenUser!$tokenName=$secret"
             if ([string]::IsNullOrWhiteSpace($env:MANAGEMENT_PROXMOX_CA_FILE)) {
                 $env:MANAGEMENT_PROXMOX_INSECURE_SKIP_VERIFY = 'true'
             }
-            Write-Host 'Read-only Proxmox включён.' -ForegroundColor Green
+            Write-Host "Proxmox включён для $tokenUser!$tokenName" -ForegroundColor Green
         }
         else {
             Write-Host 'Proxmox не настроен: панель покажет соответствующее состояние.' -ForegroundColor Yellow
         }
-        Remove-Variable secureToken, tokenInput -ErrorAction SilentlyContinue
+        Remove-Variable secureSecret, secret, tokenUser, tokenName, defaultTokenName, configuredProxmoxUrl, defaultProxmoxUrl, proxmoxUrl, parsedProxmoxUrl -ErrorAction SilentlyContinue
     }
     else {
         Write-Host 'Запуск без Proxmox (-NoProxmox).' -ForegroundColor Yellow
