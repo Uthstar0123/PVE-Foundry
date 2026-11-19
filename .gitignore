@@ -1,34 +1,61 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Test binary, built with `go test -c`
-*.test
-
-# Code coverage profiles and other test artifacts
-*.out
-coverage.html
-coverage.txt
-coverage.xml
-*.coverprofile
-profile.cov
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
-go.work
-go.work.sum
-
-# env file
+# Secrets, credentials and local configuration
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.tfvars
+!*.tfvars.example
+.ssh/
+id_rsa*
+id_ed25519*
 
-# Editor/IDE
-# .idea/
-# .vscode/
+# OpenTofu: providers, state, plans and crash logs
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfplan
+crash.log
+crash.*.log
+
+# Real infrastructure exports and terminal captures
+proxmox-inventory.json
+*-output.txt
+
+# Dependencies, portable tools and builds
+node_modules/
+.tools/
+web/dist/
+dist/
+bin/
+/server
+/server.exe
+/runner
+/runner.exe
+
+# Test, coverage and browser output
+coverage/
+test-results/
+web/test-results/
+playwright-report/
+web/playwright-report/
+blob-report/
+web/blob-report/
+*.out
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Runtime data, local databases and temporary files
+*.log
+*.tmp
+*.pid
+*.pid.lock
+pgdata/
+tmp/

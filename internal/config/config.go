@@ -1,0 +1,70 @@
+package config
+
+import (
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
+	"net"
+	"os"
+)
+
+type Config struct {
+	Address       string
+	DatabaseURL   string
+	Environment   string
+	AuthKey       []byte
+	EncryptionKey []byte
+}
+
+func Load(prefix, defaultAddress string) (Config, error) {
+	cfg := Config{
+		Address:     valueOrDefault(prefix+"_ADDRESS", defaultAddress),
+		DatabaseURL: os.Getenv(prefix + "_DATABASE_URL"),
+		Environment: valueOrDefault(prefix+"_ENVIRONMENT", "development"),
+	}
+	if _, _, err := net.SplitHostPort(cfg.Address); err != nil {
+		return Config{}, fmt.Errorf("invalid %s_ADDRESS %q: %w", prefix, cfg.Address, err)
+	}
+	switch cfg.Environment {
+	case "development", "test", "production":
+	default:
+		return Config{}, fmt.Errorf("invalid %s_ENVIRONMENT %q", prefix, cfg.Environment)
+	}
+	var err error
+	if cfg.AuthKey, err = loadKey(prefix+"_AUTH_KEY", cfg.Environment == "production"); err != nil {
+		return Config{}, err
+	}
+	if cfg.EncryptionKey, err = loadKey(prefix+"_ENCRYPTION_KEY", cfg.Environment == "production"); err != nil {
+		return Config{}, err
+	}
+	if prefix == "MANAGEMENT" && cfg.Environment == "production" && cfg.DatabaseURL == "" {
+		return Config{}, fmt.Errorf("MANAGEMENT_DATABASE_URL is required in production")
+	}
+	return cfg, nil
+}
+
+func loadKey(name string, required bool) ([]byte, error) {
+	encoded := os.Getenv(name)
+	if encoded == "" {
+		if required {
+			return nil, fmt.Errorf("%s is required in production", name)
+		}
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return nil, fmt.Errorf("generate development key: %w", err)
+		}
+		return key, nil
+	}
+	key, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || len(key) != 32 {
+		return nil, fmt.Errorf("%s must be a base64-encoded 32-byte key", name)
+	}
+	return key, nil
+}
+
+func valueOrDefault(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
+}

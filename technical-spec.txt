@@ -1,0 +1,284 @@
+# Техническое задание: Веб-платформа управления и сборки контейнеров (Mini-PaaS)
+
+- **Версия документа:** 1.0
+- **Статус:** На согласовании
+- **Тип проекта:** Self-hosted Web Application (PaaS / Docker Manager)
+
+---
+
+## 1. Введение и цели проекта
+
+### 1.1. Назначение системы
+Система представляет собой легковесную веб-панель (Mini-PaaS) для автоматизации жизненного цикла контейнеризированных приложений на выделенном сервере, виртуальной машине или в среде Proxmox VE.
+
+### 1.2. Основные цели
+1. Предоставить удобный веб-интерфейс для сборки Docker-образов из исходного кода без необходимости ручной работы через SSH.
+2. Обеспечить управление запуском, остановкой и конфигурацией как одиночных контейнеров, так и мультиконтейнерных стеков (Docker Compose).
+3. Обеспечить централизованный мониторинг, просмотр логов в реальном времени и доступ к терминалу контейнеров прямо из браузера.
+4. Автоматизировать маршрутизацию трафика, привязку доменных имен и выпуск SSL-сертификатов (Let's Encrypt).
+
+---
+
+## 2. Архитектура системы
+
+### 2.1. Диаграмма компонентов
+```mermaid
+flowchart TD
+    subgraph Client ["Frontend (Web UI)"]
+        UI["SPA (React / Vue)"]
+        XTerm["Web Terminal (xterm.js)"]
+        LogViewer["Live Log Streamer"]
+    end
+
+    subgraph Backend ["Backend Server"]
+        API["REST API Gateway"]
+        WS["WebSocket Server (Logs / Shell)"]
+        BuildEngine["Build Engine (Job Runner)"]
+        DockerClient["Docker Engine SDK Client"]
+        ProxyMgr["Reverse Proxy Manager (Caddy API)"]
+        DB[(SQLite / PostgreSQL)]
+    end
+
+    subgraph Host ["Host Infrastructure"]
+        DockerSock["/var/run/docker.sock"]
+        GitRemote["Git Repositories (GitHub / GitLab / Gitea)"]
+        Containers["Running Containers / Stacks"]
+        Volumes["Persistent Volumes & Data"]
+    end
+
+    UI <-->|HTTP / REST| API
+    XTerm <-->|WebSocket| WS
+    LogViewer <-->|WebSocket / SSE| WS
+
+    API --> DB
+    API --> BuildEngine
+    API --> DockerClient
+    API --> ProxyMgr
+
+    BuildEngine -->|git clone| GitRemote
+    BuildEngine -->|docker build| DockerSock
+    DockerClient --> DockerSock
+    ProxyMgr --> DockerSock
+
+    DockerSock --> Containers
+    Containers --> Volumes
+```
+
+### 2.2. Принцип взаимодействия компонентов
+1. **Frontend (SPA):** Отображает дашборд, формы настройки, интерактивные графики метрик, стриминг логов и терминал (xterm.js).
+2. **Backend:** Обрабатывает бизнес-логику, хранит метаданные в БД, взаимодействует с локальным демоном Docker через сокет `/var/run/docker.sock`.
+3. **Build Engine:** Воркер, отвечающий за клонирование Git-репозиториев, запуск сборки образов (`docker build`) и трансляцию вывода компиляции клиенту в реальном времени.
+4. **Reverse Proxy (Caddy):** Принимает входящий веб-трафик (порты 80, 443), автоматически выпускает SSL-сертификаты и проксирует запросы на порты контейнеров.
+
+---
+
+## 3. Функциональные требования
+
+### 3.1. Аутентификация и безопасность
+- Вход по логину и паролю с хэшированием паролей по стандарту `Argon2id` или `bcrypt`.
+- Авторизация на основе безопасных HTTP-only cookie или JWT (с Refresh-токенами).
+- Поддержка двухфакторной аутентификации (2FA / TOTP).
+- Управление API-токенами для внешних вебхуков (например, GitHub / GitLab push triggers).
+
+### 3.2. Взаимодействие с Docker Daemon
+- Подключение к локальному демону через Unix Domain Socket: `/var/run/docker.sock`.
+- Возможность подключения к внешним нодам через TCP + TLS (на перспективу масштабирования).
+- Сбор системной информации: версия Docker Engine, ОС ноды, количество ядер CPU, объем доступной/занятой RAM, дисковое пространство.
+- Менеджер реестров: сохранение кредов (логин/пароль/токен) для авторизации в Docker Hub, GitHub Packages (ghcr.io), GitLab Registry и локальных приватных registry.
+
+### 3.3. Модуль сборки образов (Build Engine)
+1. **Источники сборки:**
+   - **Git-репозиторий:** ссылка на репо (HTTPS / SSH), выбор целевой ветки, тега или коммита. Поддержка приватных репозиториев (Deploy Keys / Personal Access Tokens).
+   - **Inline Dockerfile:** создание и редактирование файла Dockerfile прямо в браузере.
+   - **Загрузка архива:** загрузка локального исходного кода (`.zip`, `.tar.gz`) через веб-интерфейс.
+2. **Параметры сборки:**
+   - Передача Build Arguments (`--build-arg`).
+   - Указание целевого имени и тега образа (например, `my-app:v1.0.0`).
+   - Настройка контекста сборки (Build context path).
+3. **Выполнение и стриминг:**
+   - Запуск `docker build` с поддержкой `BuildKit`.
+   - Потоковая передача вывода сборки (stdout/stderr) через WebSocket в веб-интерфейс в реальном времени.
+   - История сборок: фиксация статуса (`QUEUED`, `BUILDING`, `SUCCESS`, `FAILED`), времени старта, длительности и хэша коммита.
+   - Поддержка Webhook URL: автосборка при пуше в указанную ветку Git.
+
+### 3.4. Управление контейнерами (Deployment & Lifecycle)
+1. **Одиночные контейнеры (Standalone):**
+   - Выбор локального или публичного образа.
+   - Маппинг портов (Host Port : Container Port).
+   - Монтирование томов (Bind Mounts и Named Volumes).
+   - Переменные окружения: ввод списком `KEY=VALUE` или загрузка `.env` файла.
+   - Политика перезапуска: `no`, `always`, `unless-stopped`, `on-failure`.
+   - Ограничения ресурсов: лимит памяти (RAM Limit, МБ/ГБ), лимит CPU (Cores / CPU Quota).
+2. **Стеки (Docker Compose):**
+   - Веб-редактор `docker-compose.yml` с валидацией синтаксиса и подсветкой ошибок.
+   - Поддержка связок сервисов, общих сетей и томов.
+   - Управление группой сервисов как единым проектом (`Deploy / Up`, `Down`, `Restart`, `Rebuild`).
+3. **Управление жизненным циклом:**
+   - Кнопки быстрого управления: `Start`, `Stop`, `Restart`, `Kill`, `Delete`.
+   - Пересоздание контейнера (Recreate) с сохранением конфигурации и обновлением образа (`pull & restart`).
+
+### 3.5. Мониторинг, логи и Web-терминал
+1. **Стриминг логов:**
+   - Чтение потока `docker logs -f` в реальном времени через WebSocket.
+   - Буферизация (просмотр последних 100/500/1000 строк).
+   - Инструменты лог-вьюера: полнотекстовый поиск, пауза скролла, автопрокрутка вниз, скачивание лог-файла.
+2. **Веб-терминал (Web Shell):**
+   - Интеграция `xterm.js` в модальном окне или отдельной вкладке.
+   - Вызов `docker exec -it <container_id> /bin/sh` (с авто-фоллбэком на `/bin/bash` или `/bin/ash`).
+   - Корректная обработка размеров псевдотерминала (PTY resize events: cols/rows).
+3. **Метрики ресурсов:**
+   - Сбор статистики `docker stats` в реальном времени.
+   - Отрисовка графиков: загрузка CPU (%), потребление памяти (Used / Limit), сетевой трафик (Rx / Tx), дисковые операции (I/O).
+
+### 3.6. Маршрутизация трафика и SSL (Reverse Proxy)
+- Интеграция с обратным прокси **Caddy** (управление через Caddy REST API):
+  - Автоматическое добавление правил роутинга при создании домена.
+  - Автоматический запрос и продление бесплатных SSL-сертификатов Let's Encrypt / ZeroSSL.
+  - Перенаправление HTTP -> HTTPS по умолчанию.
+  - Поддержка проксирования WebSockets без дополнительной ручной настройки.
+
+---
+
+## 4. Нефункциональные требования
+
+1. **Производительность:**
+   - Время отклика основных REST API эндпоинтов — не более 200 мс.
+   - Задержка передачи ввода-вывода в веб-терминале — не более 50 мс в локальной сети.
+2. **Надежность и отказоустойчивость:**
+   - Сбой бэкенда панели управления не должен влиять на работу запущенных контейнеров клиентов.
+   - При перезапуске сервера бэкенд должен автоматически синхронизировать свой статус с фактическим состоянием Docker Engine.
+3. **Безопасность:**
+   - Строгая изоляция сокета `/var/run/docker.sock`: запрет выполнения небезопасных команд неавторизованным пользователям.
+   - Защита от переполнения диска: встроенная фоновая задача для очистки неиспользуемых слоев и временных билд-кэшей (`docker builder prune`, `docker image prune -f`).
+
+---
+
+## 5. Технологический стек
+
+| Слой | Технологии | Обоснование выбора |
+| :--- | :--- | :--- |
+| **Backend** | **Go (Golang)** | Официальный SDK от Docker (`docker/docker/client`), бинарная компиляция, нулевые накладные расходы по RAM (15–30 МБ), легкая работа с горутинами для WebSockets и стриминга логов. |
+| **Frontend** | **Vue 3 + Vite** или **React** + **TailwindCSS** | Быстрый интерфейс, компонентный подход, реактивность для графиков и таблиц состояний. |
+| **UI Components**| **shadcn-ui** / **Lucide Icons** | Современный аккуратный дизайн дашборда. |
+| **Терминал** | **xterm.js** + **xterm-addon-fit** | Де-факто отраслевой стандарт браузерного эмулятора терминала. |
+| **База данных** | **SQLite (в режиме WAL)** | Полностью встраиваемая, не требует отдельного сервиса, легко бэкапится одним файлом. |
+| **Reverse Proxy** | **Caddy Server** | Динамическое управление конфигурацией через встроенный REST API на лету без `reload`, встроенный автоматический выпуск SSL. |
+
+---
+
+## 6. Модель данных (Схема БД)
+
+```sql
+-- Пользователи системы
+CREATE TABLE users (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'admin',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Проекты / Приложения
+CREATE TABLE projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL, -- 'single', 'compose', 'git_build'
+    status TEXT NOT NULL DEFAULT 'stopped', -- 'running', 'stopped', 'error', 'building'
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Настройки сборки из Git
+CREATE TABLE git_sources (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    repo_url TEXT NOT NULL,
+    branch TEXT NOT NULL DEFAULT 'main',
+    dockerfile_path TEXT NOT NULL DEFAULT 'Dockerfile',
+    build_args_json TEXT,
+    auth_token_encrypted TEXT
+);
+
+-- История сборок
+CREATE TABLE builds (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    status TEXT NOT NULL, -- 'queued', 'building', 'success', 'failed'
+    commit_hash TEXT,
+    log_output TEXT,
+    started_at DATETIME,
+    finished_at DATETIME
+);
+
+-- Конфигурация одиночных контейнеров
+CREATE TABLE containers (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    docker_container_id TEXT,
+    image_name TEXT NOT NULL,
+    ports_json TEXT,        -- [{"host": 8080, "container": 80}]
+    env_vars_json TEXT,     -- {"KEY": "VALUE"}
+    volumes_json TEXT,      -- [{"host": "/data", "container": "/app/data"}]
+    restart_policy TEXT DEFAULT 'unless-stopped',
+    memory_limit_mb INTEGER DEFAULT 0,
+    cpu_limit REAL DEFAULT 0
+);
+
+-- Домены и маршрутизация
+CREATE TABLE domains (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    domain_name TEXT UNIQUE NOT NULL,
+    target_port INTEGER NOT NULL,
+    ssl_active INTEGER DEFAULT 0
+);
+```
+
+---
+
+## 7. Спецификация API (Ключевые эндпоинты)
+
+### 7.1. REST API
+- `POST /api/v1/auth/login` — авторизация, выдача сессионного токена.
+- `GET  /api/v1/system/info` — метрики ноды (RAM, CPU, диски, версия Docker).
+- `GET  /api/v1/containers` — получение списка всех контейнеров хоста.
+- `POST /api/v1/containers` — создание и запуск нового контейнера.
+- `POST /api/v1/containers/:id/:action` — действия над контейнером (`start`, `stop`, `restart`, `kill`).
+- `DELETE /api/v1/containers/:id` — удаление контейнера.
+- `POST /api/v1/projects/build` — ручной триггер сборки проекта.
+- `POST /api/v1/projects/:id/compose` — деплой стека Docker Compose.
+- `POST /api/v1/domains` — добавление домена и регистрация в Caddy.
+
+### 7.2. WebSocket API
+- `GET /ws/logs/:container_id` — двунаправленный стриминг логов контейнера.
+- `GET /ws/terminal/:container_id` — интерактивный PTY-сеанс (команды ввода, вывод терминала, сигнал ресайза окна `{"cols": 80, "rows": 24}`).
+- `GET /ws/builds/:build_id` — live-стриминг логов процесса сборки образа.
+- `GET /ws/stats/:container_id` — стриминг телеметрии (CPU, RAM, Сеть).
+
+---
+
+## 8. Дорожная карта разработки (Roadmap)
+
+### Этап 1: Базовое ядро (MVP) — Срок: 1–2 недели
+- [ ] Инициализация бэкенда на Go/Node.js, подключение Docker SDK к `/var/run/docker.sock`.
+- [ ] Базовая авторизация администратора.
+- [ ] Веб-интерфейс со списком запущенных контейнеров на сервере.
+- [ ] Реализация кнопок `Start`, `Stop`, `Restart`, `Delete`.
+- [ ] Стриминг логов запущенного контейнера через WebSocket.
+
+### Этап 2: Сборка и веб-терминал — Срок: 2–3 недели
+- [ ] Запуск сборщика образов: `git clone` во временную директорию -> `docker build`.
+- [ ] Трансляция процесса сборки в интерфейс в реальном времени.
+- [ ] Запуск собранного образа с пробросом портов и env-переменных.
+- [ ] Интеграция `xterm.js` и реализация сессии веб-терминала через WebSocket.
+
+### Этап 3: Compose и мониторинг — Срок: 2 недели
+- [ ] Интеграция веб-редактора `docker-compose.yml`.
+- [ ] Парсинг и запуск проектов через Docker Compose CLI / библиотеку.
+- [ ] Графики потребления ресурсов в реальном времени (CPU, RAM).
+- [ ] Автоочистка висячих билд-кэшей и образов (`prune`).
+
+### Этап 4: Сеть, домены и SSL — Срок: 1–2 недели
+- [ ] Развертывание Caddy в качестве ingress-прокси.
+- [ ] Модуль динамического обновления конфигурации Caddy через его API.
+- [ ] Выпуск Let's Encrypt сертификатов для привязанных доменов.
+- [ ] Поддержка Webhooks для автоматической пересборки при Git Push.

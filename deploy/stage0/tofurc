@@ -1,0 +1,15 @@
+provider_installation {
+  filesystem_mirror {
+    path    = "/home/orchestrator/.local/share/opentofu/providers"
+    include = ["registry.opentofu.org/bpg/proxmox"]
+  }
+
+  network_mirror {
+    url     = "https://terraform-mirror.yandexcloud.net/"
+    include = ["registry.opentofu.org/*/*"]
+  }
+
+  direct {
+    exclude = ["registry.opentofu.org/*/*"]
+  }
+}
