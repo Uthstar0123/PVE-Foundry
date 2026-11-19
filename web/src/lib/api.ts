@@ -6,6 +6,75 @@ export type User = {
   createdAt: string
 }
 
+export type ProxmoxVersion = {
+  version: string
+  release: string
+  repoid: string
+}
+
+export type ProxmoxNode = {
+  node: string
+  status: string
+  cpu: number
+  maxcpu: number
+  mem: number
+  maxmem: number
+  uptime: number
+}
+
+export type ProxmoxResource = {
+  id: string
+  vmid: number
+  name: string
+  type: 'qemu' | 'lxc' | string
+  node: string
+  status: string
+  template: number
+  pool?: string
+  maxcpu: number
+  maxmem: number
+  maxdisk: number
+}
+
+export type ProxmoxStorage = {
+  storage: string
+  node: string
+  type: string
+  content: string
+  active: number
+  enabled: number
+  shared: number
+  total: number
+  used: number
+  avail: number
+}
+
+export type ProxmoxNetwork = {
+  iface: string
+  node: string
+  type: string
+  active: number
+  bridge_ports?: string
+  address?: string
+  cidr?: string
+  gateway?: string
+}
+
+export type ProxmoxPool = {
+  poolid: string
+  comment?: string
+}
+
+export type Inventory = {
+  collectedAt: string
+  version: ProxmoxVersion
+  nodes: ProxmoxNode[]
+  resources: ProxmoxResource[]
+  storage: ProxmoxStorage[]
+  networks: ProxmoxNetwork[]
+  pools: ProxmoxPool[]
+}
+
 type ApiErrorBody = { error?: { code?: string; message?: string } }
 
 export class ApiError extends Error {
@@ -49,6 +118,7 @@ async function mutation<T>(path: string, body: unknown): Promise<T> {
 export const api = {
   status: () => request<{ required: boolean; authenticated: boolean }>('/api/v1/setup/status'),
   session: () => request<{ user: User }>('/api/v1/auth/session'),
+  inventory: () => request<Inventory>('/api/v1/proxmox/inventory'),
   setup: (body: { displayName: string; email: string; password: string }) => mutation<{ user: User }>('/api/v1/setup', body),
   login: (body: { email: string; password: string }) => mutation<{ user: User }>('/api/v1/auth/login', body),
   logout: async () => {
