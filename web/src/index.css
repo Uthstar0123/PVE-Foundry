@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 25% 8%;
+    --foreground: 160 15% 92%;
+    --card: 222 20% 11%;
+    --card-foreground: 160 15% 92%;
+    --popover: 222 20% 11%;
+    --popover-foreground: 160 15% 92%;
+    --primary: 166 60% 48%;
+    --primary-foreground: 222 30% 8%;
+    --secondary: 220 15% 16%;
+    --secondary-foreground: 160 15% 92%;
+    --muted: 220 15% 16%;
+    --muted-foreground: 215 12% 70%;
+    --accent: 220 15% 18%;
+    --accent-foreground: 160 15% 92%;
+    --destructive: 0 65% 52%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 14% 22%;
+    --input: 220 14% 25%;
+    --ring: 166 60% 48%;
+    --radius: 0.625rem;
+    --sidebar-background: 222 20% 11%;
+    --sidebar-foreground: 160 15% 92%;
+    --sidebar-primary: 166 60% 48%;
+    --sidebar-primary-foreground: 222 30% 8%;
+    --sidebar-accent: 220 15% 16%;
+    --sidebar-accent-foreground: 160 15% 92%;
+    --sidebar-border: 220 14% 22%;
+    --sidebar-ring: 166 60% 48%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+    background: hsl(var(--background));
+  }
+
+  body {
+    @apply m-0 min-w-0 bg-background text-foreground antialiased;
+    min-height: 100dvh;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.28);
+  }
+}
