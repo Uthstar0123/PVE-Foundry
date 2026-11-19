@@ -23,6 +23,7 @@ type Session struct {
 }
 
 type Store interface {
+	JobStore
 	Ready(context.Context) error
 	Initialized(context.Context) (bool, error)
 	CreateInitialAdmin(context.Context, User) error

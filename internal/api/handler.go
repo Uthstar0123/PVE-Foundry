@@ -73,6 +73,12 @@ func NewManagementHandler(database store.Store, authKey []byte, production bool,
 	mux.Handle("GET /api/v1/auth/session", m.requireSession(http.HandlerFunc(m.session)))
 	mux.Handle("GET /api/v1/overview", m.requireSession(http.HandlerFunc(m.overview)))
 	mux.Handle("GET /api/v1/proxmox/inventory", m.requireSession(http.HandlerFunc(m.inventory)))
+	mux.Handle("GET /api/v1/jobs", m.requireSession(http.HandlerFunc(m.jobs)))
+	mux.Handle("GET /api/v1/jobs/{id}", m.requireSession(http.HandlerFunc(m.job)))
+	mux.Handle("POST /api/v1/jobs/{id}/cancel", m.requireSession(http.HandlerFunc(m.cancelJob)))
+	mux.Handle("GET /api/v1/jobs/{id}/logs", m.requireSession(http.HandlerFunc(m.jobLogs)))
+	mux.Handle("GET /api/v1/audit", m.requireSession(http.HandlerFunc(m.audit)))
+	mux.Handle("GET /ws/jobs/{id}", m.requireSession(http.HandlerFunc(m.jobWebSocket)))
 	csrfOptions := []gorillacsrf.Option{
 		gorillacsrf.Secure(production),
 		gorillacsrf.HttpOnly(true),

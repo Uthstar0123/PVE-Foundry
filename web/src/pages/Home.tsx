@@ -12,7 +12,9 @@ import {
   Cpu,
   Database,
   HardDrive,
+  History,
   Layers3,
+  ListTodo,
   LoaderCircle,
   LogOut,
   MemoryStick,
@@ -22,12 +24,15 @@ import {
   ShieldCheck,
   TriangleAlert,
 } from 'lucide-react'
+import { Operations } from '@/components/Operations'
 
 const navigation = [
   { href: '#overview', label: 'Обзор', icon: Activity },
   { href: '#resources', label: 'Ресурсы', icon: Box },
   { href: '#storage', label: 'Хранилища', icon: Database },
   { href: '#network', label: 'Сеть', icon: Network },
+  { href: '#jobs', label: 'Задачи', icon: ListTodo },
+  { href: '#audit', label: 'Аудит', icon: History },
 ]
 
 const numberFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 })
@@ -135,7 +140,7 @@ export default function Home({ user, onLogout }: Props) {
         </nav>
 
         <div className="mt-6 lg:absolute lg:inset-x-6 lg:bottom-7">
-          <div className="hidden mb-4 items-center gap-2 text-xs text-muted-foreground lg:flex"><Check className="size-4 text-primary" aria-hidden="true" />Этап 3 · read-only</div>
+          <div className="hidden mb-4 items-center gap-2 text-xs text-muted-foreground lg:flex"><Check className="size-4 text-primary" aria-hidden="true" />Этап 4 · задачи и аудит</div>
           <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
             <div className="min-w-0"><div className="truncate text-sm font-medium">{user.displayName}</div><div className="truncate text-xs text-muted-foreground">{user.email}</div></div>
             <button type="button" onClick={() => void onLogout()} className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground" aria-label="Выйти"><LogOut className="size-4" /></button>
@@ -149,7 +154,7 @@ export default function Home({ user, onLogout }: Props) {
           <header className="flex flex-col gap-6 border-b border-border pb-8 md:flex-row md:items-end md:justify-between">
             <div className="max-w-3xl">
               <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-sm text-primary">
-                <ShieldCheck className="size-4" aria-hidden="true" />Только чтение · этап 3
+                <ShieldCheck className="size-4" aria-hidden="true" />Очередь и аудит · этап 4
               </div>
               <h1 className="text-3xl font-semibold tracking-[-0.035em] sm:text-4xl lg:text-5xl">Инфраструктура без ручной рутины.</h1>
               <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">Фактическое состояние нод, ВМ, LXC, хранилищ и сети Proxmox — без изменяющих операций.</p>
@@ -253,9 +258,11 @@ export default function Home({ user, onLogout }: Props) {
                 </div>
               </section>
 
-              <footer className="flex flex-col gap-2 border-t border-border pt-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><span>Снимок: {new Date(inventory.collectedAt).toLocaleString('ru-RU')}</span><span className="inline-flex items-center gap-1.5"><ShieldCheck className="size-3.5" aria-hidden="true" />Изменяющие запросы не выполняются</span></footer>
+              <footer className="flex flex-col gap-2 border-t border-border pt-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><span>Снимок: {new Date(inventory.collectedAt).toLocaleString('ru-RU')}</span><span className="inline-flex items-center gap-1.5"><ShieldCheck className="size-3.5" aria-hidden="true" />Изменяющие запросы к Proxmox не выполняются</span></footer>
             </>
           )}
+
+          <Operations />
         </div>
       </main>
     </div>

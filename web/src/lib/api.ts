@@ -75,6 +75,39 @@ export type Inventory = {
   pools: ProxmoxPool[]
 }
 
+export type Job = {
+  id: string
+  operation: string
+  resourceId: string
+  status: 'queued' | 'waiting_approval' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+  initiatorUserId: string
+  workerId?: string
+  leaseExpiresAt?: string
+  cancelRequestedAt?: string
+  errorCode?: string
+  logsTruncated: boolean
+  createdAt: string
+  startedAt?: string
+  finishedAt?: string
+  updatedAt: string
+}
+
+export type JobStep = {
+  id: string
+  jobId: string
+  name: string
+  status: string
+  detail: string
+  startedAt?: string
+  finishedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type JobEvent = { id: number; jobId: string; level: string; message: string; createdAt: string }
+export type JobDetail = { job: Job; steps: JobStep[]; events: JobEvent[] }
+export type AuditEvent = { id: number; eventType: string; userId?: string; sourceIp: string; detail: string; createdAt: string }
+
 type ApiErrorBody = { error?: { code?: string; message?: string } }
 
 export class ApiError extends Error {
@@ -119,6 +152,11 @@ export const api = {
   status: () => request<{ required: boolean; authenticated: boolean }>('/api/v1/setup/status'),
   session: () => request<{ user: User }>('/api/v1/auth/session'),
   inventory: () => request<Inventory>('/api/v1/proxmox/inventory'),
+  jobs: () => request<{ jobs: Job[] }>('/api/v1/jobs'),
+  job: (id: string) => request<JobDetail>(`/api/v1/jobs/${id}`),
+  cancelJob: (id: string) => mutation<{ job: Job; rollback: false }>(`/api/v1/jobs/${id}/cancel`, {}),
+  jobLogsURL: (id: string) => `/api/v1/jobs/${id}/logs`,
+  audit: () => request<{ events: AuditEvent[] }>('/api/v1/audit'),
   setup: (body: { displayName: string; email: string; password: string }) => mutation<{ user: User }>('/api/v1/setup', body),
   login: (body: { email: string; password: string }) => mutation<{ user: User }>('/api/v1/auth/login', body),
   logout: async () => {

@@ -10,14 +10,24 @@ import (
 
 // Memory is an isolated test double. Production always uses PostgreSQL.
 type Memory struct {
-	mu       sync.Mutex
-	users    map[string]User
-	sessions map[[32]byte]Session
-	Audits   []string
+	mu          sync.Mutex
+	users       map[string]User
+	sessions    map[[32]byte]Session
+	jobs        map[string]Job
+	locks       map[string]string
+	steps       map[string][]JobStep
+	events      map[string][]JobEvent
+	nextEventID int64
+	Audits      []string
+	AuditEvents []AuditEvent
 }
 
 func NewMemory() *Memory {
-	return &Memory{users: make(map[string]User), sessions: make(map[[32]byte]Session)}
+	return &Memory{
+		users: make(map[string]User), sessions: make(map[[32]byte]Session),
+		jobs: make(map[string]Job), locks: make(map[string]string),
+		steps: make(map[string][]JobStep), events: make(map[string][]JobEvent),
+	}
 }
 func (m *Memory) Ready(context.Context) error { return nil }
 func (m *Memory) Close()                      {}
@@ -70,9 +80,10 @@ func (m *Memory) DeleteSession(_ context.Context, hash [32]byte) error {
 	delete(m.sessions, hash)
 	return nil
 }
-func (m *Memory) Audit(_ context.Context, event string, _ *string, _ string, _ string) error {
+func (m *Memory) Audit(_ context.Context, event string, userID *string, sourceIP, detail string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Audits = append(m.Audits, event)
+	m.AuditEvents = append(m.AuditEvents, AuditEvent{ID: int64(len(m.AuditEvents) + 1), EventType: event, UserID: userID, SourceIP: sourceIP, Detail: detail, CreatedAt: time.Now().UTC()})
 	return nil
 }
