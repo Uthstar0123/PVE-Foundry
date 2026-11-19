@@ -8,9 +8,15 @@ const errors = []
 try {
   await mkdir('test-results', { recursive: true })
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`) })
+  page.on('console', (message) => {
+    const expectedMissingProxmox = message.text().includes('503') && message.location().url.endsWith('/api/v1/proxmox/inventory')
+    if (message.type() === 'error' && !expectedMissingProxmox) errors.push(`console: ${message.text()}`)
+  })
   page.on('pageerror', (error) => errors.push(`page: ${error.message}`))
-  page.on('response', (response) => { if (response.status() >= 400) errors.push(`http ${response.status()}: ${response.url()}`) })
+  page.on('response', (response) => {
+    const expectedMissingProxmox = response.status() === 503 && response.url().endsWith('/api/v1/proxmox/inventory')
+    if (response.status() >= 400 && !expectedMissingProxmox) errors.push(`http ${response.status()}: ${response.url()}`)
+  })
 
   await page.goto(baseURL, { waitUntil: 'networkidle' })
   await page.getByRole('heading', { name: 'Создайте администратора' }).waitFor()
@@ -21,6 +27,7 @@ try {
   await page.getByLabel('Повторите пароль').fill('integration-test-password')
   await page.getByRole('button', { name: 'Создать и войти' }).click()
   await page.getByRole('heading', { name: 'Инфраструктура без ручной рутины.' }).waitFor()
+  await page.getByRole('heading', { name: 'Proxmox ещё не подключён' }).waitFor()
   await page.screenshot({ path: 'test-results/overview-desktop.png', fullPage: true })
 
   const logoutResponse = page.waitForResponse((response) => response.url().endsWith('/api/v1/auth/logout'))

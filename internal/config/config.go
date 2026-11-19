@@ -9,11 +9,15 @@ import (
 )
 
 type Config struct {
-	Address       string
-	DatabaseURL   string
-	Environment   string
-	AuthKey       []byte
-	EncryptionKey []byte
+	Address         string
+	DatabaseURL     string
+	Environment     string
+	AuthKey         []byte
+	EncryptionKey   []byte
+	ProxmoxAPIURL   string
+	ProxmoxAPIToken string
+	ProxmoxCAFile   string
+	ProxmoxInsecure bool
 }
 
 func Load(prefix, defaultAddress string) (Config, error) {
@@ -39,6 +43,16 @@ func Load(prefix, defaultAddress string) (Config, error) {
 	}
 	if prefix == "MANAGEMENT" && cfg.Environment == "production" && cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("MANAGEMENT_DATABASE_URL is required in production")
+	}
+	cfg.ProxmoxAPIURL = os.Getenv(prefix + "_PROXMOX_API_URL")
+	cfg.ProxmoxAPIToken = os.Getenv(prefix + "_PROXMOX_API_TOKEN")
+	cfg.ProxmoxCAFile = os.Getenv(prefix + "_PROXMOX_CA_FILE")
+	cfg.ProxmoxInsecure = os.Getenv(prefix+"_PROXMOX_INSECURE_SKIP_VERIFY") == "true"
+	if (cfg.ProxmoxAPIURL == "") != (cfg.ProxmoxAPIToken == "") {
+		return Config{}, fmt.Errorf("%s_PROXMOX_API_URL and %s_PROXMOX_API_TOKEN must be provided together", prefix, prefix)
+	}
+	if cfg.ProxmoxInsecure && cfg.Environment == "production" {
+		return Config{}, fmt.Errorf("%s_PROXMOX_INSECURE_SKIP_VERIFY is forbidden in production", prefix)
 	}
 	return cfg, nil
 }

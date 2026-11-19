@@ -17,6 +17,7 @@ import (
 	gorillacsrf "github.com/gorilla/csrf"
 
 	"proxmox-orchestrator/internal/auth"
+	"proxmox-orchestrator/internal/proxmox"
 	"proxmox-orchestrator/internal/store"
 )
 
@@ -27,11 +28,16 @@ type healthResponse struct {
 	Service string `json:"service"`
 }
 
+type InventoryClient interface {
+	Inventory(context.Context) (proxmox.Inventory, error)
+}
+
 type Management struct {
 	store     store.Store
 	secure    bool
 	limiter   *loginLimiter
 	dummyHash string
+	proxmox   InventoryClient
 }
 
 func NewHandler(service string) http.Handler {
@@ -45,12 +51,15 @@ func NewHandler(service string) http.Handler {
 	return securityHeaders(mux)
 }
 
-func NewManagementHandler(database store.Store, authKey []byte, production bool) (http.Handler, error) {
+func NewManagementHandler(database store.Store, authKey []byte, production bool, clients ...InventoryClient) (http.Handler, error) {
 	dummyHash, err := auth.HashPassword("not-a-real-user-password")
 	if err != nil {
 		return nil, err
 	}
 	m := &Management{store: database, secure: production, limiter: newLoginLimiter(), dummyHash: dummyHash}
+	if len(clients) > 0 {
+		m.proxmox = clients[0]
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, healthResponse{Status: "ok", Service: "management"})
@@ -63,6 +72,7 @@ func NewManagementHandler(database store.Store, authKey []byte, production bool)
 	mux.Handle("POST /api/v1/auth/logout", m.requireSession(http.HandlerFunc(m.logout)))
 	mux.Handle("GET /api/v1/auth/session", m.requireSession(http.HandlerFunc(m.session)))
 	mux.Handle("GET /api/v1/overview", m.requireSession(http.HandlerFunc(m.overview)))
+	mux.Handle("GET /api/v1/proxmox/inventory", m.requireSession(http.HandlerFunc(m.inventory)))
 	csrfOptions := []gorillacsrf.Option{
 		gorillacsrf.Secure(production),
 		gorillacsrf.HttpOnly(true),
@@ -208,7 +218,26 @@ func (m *Management) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Management) overview(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"status": "protected", "proxmoxConnected": false, "message": "Read-only интеграция будет добавлена на этапе 3"})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":           "protected",
+		"proxmoxConnected": m.proxmox != nil,
+	})
+}
+
+func (m *Management) inventory(w http.ResponseWriter, r *http.Request) {
+	if m.proxmox == nil {
+		writeError(w, http.StatusServiceUnavailable, "proxmox_not_configured", "Подключение Proxmox не настроено")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+	inventory, err := m.proxmox.Inventory(ctx)
+	if err != nil {
+		log.Printf("read Proxmox inventory: %v", err)
+		writeError(w, http.StatusBadGateway, "proxmox_unavailable", "Не удалось получить инвентарь Proxmox")
+		return
+	}
+	writeJSON(w, http.StatusOK, inventory)
 }
 
 type userContextKey struct{}
