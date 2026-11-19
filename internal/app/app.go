@@ -12,6 +12,7 @@ import (
 
 	"proxmox-orchestrator/internal/api"
 	"proxmox-orchestrator/internal/config"
+	"proxmox-orchestrator/internal/proxmox"
 	"proxmox-orchestrator/internal/store"
 )
 
@@ -33,7 +34,24 @@ func Run(service, prefix, defaultAddress string) {
 			log.Fatalf("initialize database: %v", err)
 		}
 		defer database.Close()
-		handler, err = api.NewManagementHandler(database, cfg.AuthKey, cfg.Environment == "production")
+		var inventoryClients []api.InventoryClient
+		if cfg.ProxmoxAPIURL != "" {
+			client, clientErr := proxmox.NewClient(proxmox.Config{
+				APIURL:             cfg.ProxmoxAPIURL,
+				APIToken:           cfg.ProxmoxAPIToken,
+				CAFile:             cfg.ProxmoxCAFile,
+				InsecureSkipVerify: cfg.ProxmoxInsecure,
+			})
+			if clientErr != nil {
+				log.Fatalf("initialize Proxmox client: %v", clientErr)
+			}
+			cached := proxmox.NewCachedClient(client, 30*time.Second)
+			inventoryClients = append(inventoryClients, cached)
+			syncCtx, stopSync := context.WithCancel(context.Background())
+			defer stopSync()
+			go cached.Run(syncCtx, time.Minute)
+		}
+		handler, err = api.NewManagementHandler(database, cfg.AuthKey, cfg.Environment == "production", inventoryClients...)
 		if err != nil {
 			log.Fatalf("initialize management API: %v", err)
 		}

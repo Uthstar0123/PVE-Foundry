@@ -1,19 +1,21 @@
 # PVE Foundry
 
+[![CI](https://github.com/Uthstar0123/PVE-Foundry/actions/workflows/ci.yml/badge.svg)](https://github.com/Uthstar0123/PVE-Foundry/actions/workflows/ci.yml)
+
 Локальная low-code платформа для проектирования и управления инфраструктурой Proxmox VE. Пользователь собирает ВМ, LXC и сети блоками, а Foundry формирует OpenTofu-конфигурацию, показывает план изменений и передаёт подтверждённую работу изолированному Runner.
 
-> Проект находится в активной разработке. Этапы 0–2 реализованы. Создание ресурсов через UI, каталог приложений и запуск OpenTofu из панели будут добавлены следующими этапами.
+> Проект находится в активной разработке. Этапы 0–2 завершены. Для этапа 3 реализованы read-only API, кэш и интерфейс инвентаря; фактическая синхронизация с реальным Proxmox ещё должна быть проверена с API token владельца.
 
 ## Статус разработки
 
-**Текущая точка:** этап 2 завершён 19 ноября 2026 года; следующий этап — read-only инвентарь Proxmox. Проект ещё не является готовым production-релизом.
+**Текущая точка:** реализован программный контур этапа 3. Unit/API-тесты, сборка и браузерные сценарии с mock Proxmox проходят. Это не production-релиз: критерий показа фактического состояния тестового Proxmox пока не закрыт.
 
 | Этап | Содержание | Статус |
 |---|---|---|
 | 0 | Proxmox 9.2.10, templates, Runner VM, OpenTofu smoke-тесты | ✅ Завершён |
 | 1 | Go services, React UI, миграции, сборка и базовые тесты | ✅ Завершён |
 | 2 | PostgreSQL, первичный администратор, авторизация и защита API | ✅ Завершён |
-| 3 | Read-only интеграция и инвентарь Proxmox | ⏭️ Следующий |
+| 3 | Read-only интеграция и инвентарь Proxmox | 🧪 Код готов, нужна проверка на реальном PVE |
 | 4 | Очередь задач, логи и аудит | 📋 Запланирован |
 | 5 | Аутентифицированный Runner и безопасный OpenTofu | 📋 Запланирован |
 | 6 | Конструктор и жизненный цикл ВМ/LXC | 📋 Запланирован |
@@ -26,24 +28,29 @@
 
 ### Важные ограничения текущей версии
 
-- UI пока не создаёт, не изменяет и не удаляет ресурсы Proxmox.
-- Runner сейчас предоставляет только health endpoints и не принимает задания.
-- Подключение кластера через защищённые настройки появится на этапе 3.
-- TLS-проверка Proxmox CA, очередь задач, backup и recovery ещё не реализованы.
-- Smoke-тесты создавали только ресурсы тестового pool; рабочие ресурсы не изменялись.
+- UI не создаёт, не изменяет и не удаляет ресурсы Proxmox.
+- Runner предоставляет только health endpoints и не принимает задания.
+- Proxmox подключается через переменные окружения Management; защищённая страница настроек кластера ещё не реализована.
+- Снимок инвентаря кэшируется в памяти на 30 секунд и обновляется в фоне раз в минуту. PostgreSQL-кэш и reconciliation внутренних ресурсов ещё не реализованы.
+- TLS, формат ответов и ошибки API проверены на mock server. Фактический снимок с PVE 9.2.10 не запрашивался этим кодом, потому что секрет токена недоступен автоматическим проверкам.
+- Smoke-тесты этапа 0 создавали только ресурсы тестового pool; рабочие ресурсы не изменялись.
 
 ## Что уже работает
 
 - Проверенный тестовый контур Proxmox VE 9.2.10.
-- Создание и удаление тестовых QEMU/LXC через OpenTofu 1.13.9 и `bpg/proxmox` 0.123.0.
+- Создание и удаление тестовых QEMU/LXC через OpenTofu 1.13.9 и `bpg/proxmox` 0.123.0 — проверено на этапе 0.
 - Management API и отдельный Runner service на Go.
 - PostgreSQL с версионируемыми встроенными миграциями.
 - Мастер единственного первичного администратора без пароля по умолчанию.
 - Вход, выход и серверные сессии со сроком действия 12 часов.
 - Argon2id для паролей и AES-256-GCM для секретов.
 - CSRF-защита, `HttpOnly`/`SameSite=Strict` cookie и ограничение перебора пароля.
-- React UI с адаптивными формами первичной настройки и входа.
-- Автоматические unit/API-тесты и сквозной Playwright-сценарий.
+- Авторизованный `GET /api/v1/proxmox/inventory`: версия, ноды, QEMU/LXC, storage, pools и сетевые интерфейсы.
+- Proxmox API client использует только GET, поддерживает доверенный CA и не раскрывает token в ответах API.
+- Кэш инвентаря в памяти, объединение одновременных запросов и фоновое обновление.
+- React UI с настройкой, входом, обзором нод, раскрываемыми карточками ресурсов, storage, pools и сетью.
+- Состояния загрузки, отсутствия конфигурации и ошибки с повторным запросом.
+- Автоматические unit/API-тесты и Playwright-сценарии реальной авторизации и mock-инвентаря.
 
 ## Архитектура
 
@@ -53,7 +60,7 @@ Browser
    ▼
 Management VM
    ├─ React SPA
-   ├─ Go Management API
+   ├─ Go Management API ── read-only Proxmox API + in-memory cache
    └─ PostgreSQL
            │ аутентифицированный канал — этап 5
            ▼
@@ -76,6 +83,7 @@ cmd/runner/             Runner service
 internal/api/           HTTP API, sessions, CSRF, rate limiting
 internal/auth/          Argon2id и шифрование секретов
 internal/config/        Конфигурация процесса
+internal/proxmox/       Read-only client, TLS и in-memory cache
 internal/store/         PostgreSQL и изолированный test double
 migrations/             SQL migrations и embedded FS
 web/                    React + TypeScript + Vite
@@ -90,7 +98,8 @@ docs/                   ТЗ, план и результаты совмести�
 - Node.js 20+ и npm;
 - PostgreSQL 16+;
 - Microsoft Edge или Chromium для Playwright browser check;
-- Proxmox VE не требуется для локальных проверок этапов 1–2.
+- Proxmox VE не требуется для unit/API-тестов и браузерной проверки с mock;
+- для фактической синхронизации — Proxmox VE и read-only API token с `PVEAuditor`.
 
 ## Быстрый старт разработки
 
@@ -105,7 +114,7 @@ CREATE DATABASE orchestrator OWNER orchestrator;
 
 ### 2. Настройте окружение
 
-Скопируйте `.env.example` в `.env` и задайте собственные значения. Файл `.env` игнорируется Git.
+Скопируйте `.env.example` в `.env` и задайте собственные значения. Файл `.env` игнорируется Git. Переменные окружения экспортируются в процесс; `.env` является примером конфигурации, а не автоматически загружаемым файлом.
 
 Сгенерировать 32-байтовые ключи можно так:
 
@@ -120,7 +129,20 @@ openssl rand -base64 32
 
 Ключ шифрования нужно хранить отдельно от резервной копии базы. Его потеря сделает сохранённые секреты нечитаемыми. В development при отсутствии ключей создаются временные значения: после перезапуска старые сессии и зашифрованные секреты становятся недействительными.
 
-Переменные окружения экспортируются в процесс; `.env` является примером конфигурации, а не автоматически загружаемым файлом.
+Для необязательного подключения read-only инвентаря задайте обе переменные:
+
+```text
+MANAGEMENT_PROXMOX_API_URL=https://pve.example.local:8006
+MANAGEMENT_PROXMOX_API_TOKEN=user@pve!token-id=secret
+```
+
+Не отправляйте реальный secret в чат и не записывайте его в Git. Для приватного или самоподписанного CA укажите PEM-файл:
+
+```text
+MANAGEMENT_PROXMOX_CA_FILE=/secure/path/proxmox-ca.pem
+```
+
+`MANAGEMENT_PROXMOX_INSECURE_SKIP_VERIFY=true` допустим только в development/test и запрещён в production. Без URL и token Management запускается обычно, а endpoint инвентаря возвращает `503 proxmox_not_configured`.
 
 ### 3. Запустите Management и Runner
 
@@ -165,13 +187,23 @@ npm --prefix web run build
 npm --prefix web audit
 ```
 
-Для сквозного сценария нужны запущенные PostgreSQL, Management на `:8080` и UI на `:7100`:
+GitHub Actions автоматически запускает проверку форматирования Go, `go test ./...`, `go vet ./...`, сборку обоих сервисов, frontend tests/lint/build и `npm audit` для каждого push и pull request. Конфигурация находится в `.github/workflows/ci.yml`; реальные Proxmox tokens для CI не нужны. Локальные Playwright-сценарии с Edge и PostgreSQL в CI пока не запускаются.
+
+Для сквозного сценария авторизации нужны запущенные PostgreSQL, Management на `:8080` и UI на `:7100`:
 
 ```bash
 node web/tests/preview.mjs
 ```
 
 Сценарий ожидает пустую базу и выполняет `setup → logout → login → logout`. Не запускайте его на установке с реальным администратором.
+
+Для визуальной проверки инвентаря достаточно запущенного Vite UI:
+
+```bash
+node web/tests/inventory-preview.mjs
+```
+
+Этот сценарий перехватывает API в Playwright и использует **mock-данные, не реальный Proxmox**. Он проверяет desktop/mobile layout, навигацию, карточку ресурса, обновление и состояние `proxmox_not_configured`.
 
 ## API текущего этапа
 
@@ -188,13 +220,14 @@ node web/tests/preview.mjs
 
 - `GET /api/v1/auth/session`;
 - `POST /api/v1/auth/logout`;
-- `GET /api/v1/overview`.
+- `GET /api/v1/overview`;
+- `GET /api/v1/proxmox/inventory`.
 
-Для всех изменяющих запросов необходимы JSON, CSRF token в `X-CSRF-Token` и same-origin cookie. Пароли, password hash, Proxmox token и encryption key не включаются в ответы API.
+Для всех изменяющих запросов необходимы JSON, CSRF token в `X-CSRF-Token` и same-origin cookie. Пароли, password hash, Proxmox token и encryption key не включаются в ответы API. Клиент Proxmox выполняет только GET-запросы.
 
 ## Production-замечания
 
-В `MANAGEMENT_ENVIRONMENT=production` обязательны PostgreSQL URL и оба ключа. Session/CSRF cookie становятся `Secure`. Публикацию следует выполнять только через HTTPS и без открытия панели напрямую в Интернет. TLS Proxmox API с `insecure = true` остаётся временным ограничением smoke-контура и будет заменён проверкой CA на этапе 3.
+В `MANAGEMENT_ENVIRONMENT=production` обязательны PostgreSQL URL и оба ключа. Session/CSRF cookie становятся `Secure`. Публикацию следует выполнять только через HTTPS и без открытия панели напрямую в Интернет. Для Proxmox API используйте доверенный CA через `MANAGEMENT_PROXMOX_CA_FILE`; отключение проверки TLS в production отклоняется при загрузке конфигурации.
 
 ## Лицензия
 
@@ -213,4 +246,4 @@ node web/tests/preview.mjs
 
 ## Дальше
 
-Следующий этап — read-only интеграция с Proxmox: TLS diagnostics, ноды, ресурсы, storage, pools, сеть и синхронизация без изменяющих операций.
+Сначала нужно подтвердить этап 3 фактическим read-only снимком тестового Proxmox и решить, нужен ли PostgreSQL-кэш для reconciliation. Затем начинается этап 4: PostgreSQL-backed очередь, задачи, шаги, leases, логи и аудит.
