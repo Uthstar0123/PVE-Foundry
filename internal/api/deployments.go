@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"proxmox-orchestrator/internal/deployment"
 	"proxmox-orchestrator/internal/redact"
 	"proxmox-orchestrator/internal/seal"
 	"proxmox-orchestrator/internal/store"
@@ -40,17 +41,42 @@ func decodeSizedJSON(w http.ResponseWriter, r *http.Request, target any, size in
 
 func (m *Management) createOpenTofuDeployment(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		ResourceID     string `json:"resourceId"`
-		IdempotencyKey string `json:"idempotencyKey"`
-		Artifact       string `json:"artifact"`
+		ResourceID     string                 `json:"resourceId"`
+		IdempotencyKey string                 `json:"idempotencyKey"`
+		Artifact       string                 `json:"artifact"`
+		Files          []deployment.InputFile `json:"files"`
+		Variables      map[string]any         `json:"variables"`
 	}
-	if !decodeSizedJSON(w, r, &input, maxArtifactSize*2) {
+	if !decodeSizedJSON(w, r, &input, maxArtifactSize*6) {
 		return
 	}
 	input.ResourceID, input.IdempotencyKey = strings.TrimSpace(input.ResourceID), strings.TrimSpace(input.IdempotencyKey)
-	artifact, err := base64.StdEncoding.DecodeString(input.Artifact)
+	var artifact []byte
+	var err error
+	if len(input.Files) > 0 {
+		var files []deployment.File
+		files, err = deployment.DecodeFiles(input.Files)
+		if err == nil {
+			artifact, err = deployment.Archive(files, input.Variables)
+		}
+	} else {
+		artifact, err = base64.StdEncoding.DecodeString(input.Artifact)
+	}
 	if err != nil || len(artifact) == 0 || len(artifact) > maxArtifactSize || input.ResourceID == "" || len(input.ResourceID) > 255 || input.IdempotencyKey == "" || len(input.IdempotencyKey) > 255 {
-		writeError(w, http.StatusBadRequest, "invalid_deployment", "Укажите resourceId, idempotencyKey и tar.gz-архив размером до 1 МиБ")
+		message := "Проверьте идентификатор deployment и конфигурацию"
+		if err != nil {
+			message += ": " + err.Error()
+		}
+		writeError(w, http.StatusBadRequest, "invalid_deployment", message)
+		return
+	}
+	m.enqueueOpenTofuArtifact(w, r, input.ResourceID, input.IdempotencyKey, artifact)
+}
+
+func (m *Management) enqueueOpenTofuArtifact(w http.ResponseWriter, r *http.Request, resourceID, idempotencyKey string, artifact []byte) {
+	resourceID, idempotencyKey = strings.TrimSpace(resourceID), strings.TrimSpace(idempotencyKey)
+	if resourceID == "" || len(resourceID) > 255 || idempotencyKey == "" || len(idempotencyKey) > 255 || len(artifact) == 0 || len(artifact) > maxArtifactSize {
+		writeError(w, http.StatusBadRequest, "invalid_deployment", "Проверьте идентификатор deployment и размер конфигурации")
 		return
 	}
 	hash := sha256.Sum256(artifact)
@@ -61,7 +87,7 @@ func (m *Management) createOpenTofuDeployment(w http.ResponseWriter, r *http.Req
 		return
 	}
 	user := m.currentUser(r)
-	job, created, err := m.store.EnqueueJob(r.Context(), store.EnqueueJobInput{Operation: "opentofu.plan_apply", ResourceID: input.ResourceID, InitiatorUserID: user.ID, IdempotencyKey: input.IdempotencyKey, RequestHash: hashText, Artifact: encrypted, ArtifactSHA256: hashText})
+	job, created, err := m.store.EnqueueJob(r.Context(), store.EnqueueJobInput{Operation: "opentofu.plan_apply", ResourceID: resourceID, InitiatorUserID: user.ID, IdempotencyKey: idempotencyKey, RequestHash: hashText, Artifact: encrypted, ArtifactSHA256: hashText})
 	if err != nil {
 		m.writeJobError(w, err)
 		return

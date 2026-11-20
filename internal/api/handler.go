@@ -94,6 +94,9 @@ func NewManagementHandlerWithConfig(database store.Store, authKey []byte, produc
 	mux.Handle("GET /api/v1/audit", m.requireSession(http.HandlerFunc(m.audit)))
 	mux.Handle("GET /ws/jobs/{id}", m.requireSession(http.HandlerFunc(m.jobWebSocket)))
 	if cfg.RunnerToken != "" {
+		mux.Handle("GET /api/v1/deployments/defaults", m.requireSession(http.HandlerFunc(m.deploymentDefaults)))
+		mux.Handle("POST /api/v1/deployments/opentofu/preflight", m.requireSession(http.HandlerFunc(m.preflightOpenTofu)))
+		mux.Handle("POST /api/v1/deployments/opentofu/designer", m.requireSession(http.HandlerFunc(m.createDesignerDeployment)))
 		mux.Handle("POST /api/v1/deployments/opentofu", m.requireSession(http.HandlerFunc(m.createOpenTofuDeployment)))
 		mux.Handle("POST /api/v1/jobs/{id}/approve", m.requireSession(http.HandlerFunc(m.approvePlan)))
 		mux.HandleFunc("POST /api/v1/runner/claim", m.runnerClaim)
