@@ -120,6 +120,7 @@ try {
     $env:MANAGEMENT_DATABASE_URL = 'postgres://postgres@127.0.0.1:55432/orchestrator?sslmode=disable'
     $env:MANAGEMENT_AUTH_KEY = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
     $env:MANAGEMENT_ENCRYPTION_KEY = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB='
+    $env:MANAGEMENT_RUNNER_TOKEN = 'development-only-runner-token-change-in-production'
     $configuredProxmoxUrl = $env:MANAGEMENT_PROXMOX_API_URL
     Remove-Item Env:MANAGEMENT_PROXMOX_API_URL -ErrorAction SilentlyContinue
     Remove-Item Env:MANAGEMENT_PROXMOX_API_TOKEN -ErrorAction SilentlyContinue

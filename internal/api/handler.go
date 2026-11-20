@@ -33,11 +33,18 @@ type InventoryClient interface {
 }
 
 type Management struct {
-	store     store.Store
-	secure    bool
-	limiter   *loginLimiter
-	dummyHash string
-	proxmox   InventoryClient
+	store         store.Store
+	secure        bool
+	limiter       *loginLimiter
+	dummyHash     string
+	proxmox       InventoryClient
+	runnerToken   string
+	encryptionKey []byte
+}
+
+type ManagementConfig struct {
+	RunnerToken   string
+	EncryptionKey []byte
 }
 
 func NewHandler(service string) http.Handler {
@@ -52,11 +59,18 @@ func NewHandler(service string) http.Handler {
 }
 
 func NewManagementHandler(database store.Store, authKey []byte, production bool, clients ...InventoryClient) (http.Handler, error) {
+	return NewManagementHandlerWithConfig(database, authKey, production, ManagementConfig{}, clients...)
+}
+
+func NewManagementHandlerWithConfig(database store.Store, authKey []byte, production bool, cfg ManagementConfig, clients ...InventoryClient) (http.Handler, error) {
 	dummyHash, err := auth.HashPassword("not-a-real-user-password")
 	if err != nil {
 		return nil, err
 	}
-	m := &Management{store: database, secure: production, limiter: newLoginLimiter(), dummyHash: dummyHash}
+	if cfg.RunnerToken != "" && len(cfg.EncryptionKey) != 32 {
+		return nil, errors.New("a 32-byte encryption key is required for deployments")
+	}
+	m := &Management{store: database, secure: production, limiter: newLoginLimiter(), dummyHash: dummyHash, runnerToken: cfg.RunnerToken, encryptionKey: cfg.EncryptionKey}
 	if len(clients) > 0 {
 		m.proxmox = clients[0]
 	}
@@ -79,13 +93,19 @@ func NewManagementHandler(database store.Store, authKey []byte, production bool,
 	mux.Handle("GET /api/v1/jobs/{id}/logs", m.requireSession(http.HandlerFunc(m.jobLogs)))
 	mux.Handle("GET /api/v1/audit", m.requireSession(http.HandlerFunc(m.audit)))
 	mux.Handle("GET /ws/jobs/{id}", m.requireSession(http.HandlerFunc(m.jobWebSocket)))
+	if cfg.RunnerToken != "" {
+		mux.Handle("POST /api/v1/deployments/opentofu", m.requireSession(http.HandlerFunc(m.createOpenTofuDeployment)))
+		mux.Handle("POST /api/v1/jobs/{id}/approve", m.requireSession(http.HandlerFunc(m.approvePlan)))
+		mux.HandleFunc("POST /api/v1/runner/claim", m.runnerClaim)
+		mux.HandleFunc("POST /api/v1/runner/jobs/{id}/renew", m.runnerRenew)
+		mux.HandleFunc("POST /api/v1/runner/jobs/{id}/plan", m.runnerPlan)
+		mux.HandleFunc("POST /api/v1/runner/jobs/{id}/step", m.runnerStep)
+		mux.HandleFunc("POST /api/v1/runner/jobs/{id}/event", m.runnerEvent)
+		mux.HandleFunc("POST /api/v1/runner/jobs/{id}/complete", m.runnerComplete)
+	}
 	csrfOptions := []gorillacsrf.Option{
-		gorillacsrf.Secure(production),
-		gorillacsrf.HttpOnly(true),
-		gorillacsrf.SameSite(gorillacsrf.SameSiteStrictMode),
-		gorillacsrf.Path("/"),
-		gorillacsrf.CookieName("orchestrator_csrf"),
-		gorillacsrf.RequestHeader("X-CSRF-Token"),
+		gorillacsrf.Secure(production), gorillacsrf.HttpOnly(true), gorillacsrf.SameSite(gorillacsrf.SameSiteStrictMode),
+		gorillacsrf.Path("/"), gorillacsrf.CookieName("orchestrator_csrf"), gorillacsrf.RequestHeader("X-CSRF-Token"),
 		gorillacsrf.ErrorHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			log.Printf("CSRF rejected: %v", gorillacsrf.FailureReason(r))
 			writeError(w, http.StatusForbidden, "csrf_rejected", "Сессия формы устарела. Обновите страницу.")
@@ -94,9 +114,12 @@ func NewManagementHandler(database store.Store, authKey []byte, production bool,
 	if !production {
 		csrfOptions = append(csrfOptions, gorillacsrf.TrustedOrigins([]string{"localhost:7100", "127.0.0.1:7100"}))
 	}
-	protection := gorillacsrf.Protect(authKey, csrfOptions...)
-	protected := protection(mux)
+	protected := gorillacsrf.Protect(authKey, csrfOptions...)(mux)
 	plaintext := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/runner/") {
+			mux.ServeHTTP(w, r)
+			return
+		}
 		if !production && r.TLS == nil {
 			r = gorillacsrf.PlaintextHTTPRequest(r)
 		}

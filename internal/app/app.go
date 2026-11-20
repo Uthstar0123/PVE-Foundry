@@ -76,7 +76,7 @@ func Run(service, prefix, defaultAddress string) {
 			defer stopSync()
 			go cached.Run(syncCtx, time.Minute)
 		}
-		handler, err = api.NewManagementHandler(database, cfg.AuthKey, cfg.Environment == "production", inventoryClients...)
+		handler, err = api.NewManagementHandlerWithConfig(database, cfg.AuthKey, cfg.Environment == "production", api.ManagementConfig{RunnerToken: cfg.RunnerToken, EncryptionKey: cfg.EncryptionKey}, inventoryClients...)
 		if err != nil {
 			log.Fatalf("initialize management API: %v", err)
 		}

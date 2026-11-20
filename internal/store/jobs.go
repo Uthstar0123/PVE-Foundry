@@ -20,6 +20,8 @@ var (
 	ErrResourceLocked       = errors.New("resource is locked by another active job")
 	ErrInvalidJobTransition = errors.New("invalid job state transition")
 	ErrLeaseExpired         = errors.New("job lease is expired or owned by another worker")
+	ErrApprovalExpired      = errors.New("plan approval is expired")
+	ErrPlanChanged          = errors.New("configuration changed after planning")
 )
 
 type Job struct {
@@ -62,9 +64,14 @@ type JobEvent struct {
 }
 
 type JobDetail struct {
-	Job    Job        `json:"job"`
-	Steps  []JobStep  `json:"steps"`
-	Events []JobEvent `json:"events"`
+	Job               Job        `json:"job"`
+	Steps             []JobStep  `json:"steps"`
+	Events            []JobEvent `json:"events"`
+	ArtifactSHA256    string     `json:"artifactSha256,omitempty"`
+	PlanText          string     `json:"planText,omitempty"`
+	PlanSHA256        string     `json:"planSha256,omitempty"`
+	ApprovalExpiresAt *time.Time `json:"approvalExpiresAt,omitempty"`
+	ApprovedAt        *time.Time `json:"approvedAt,omitempty"`
 }
 
 type EnqueueJobInput struct {
@@ -74,6 +81,22 @@ type EnqueueJobInput struct {
 	IdempotencyKey  string
 	RequestHash     string
 	Status          string
+	Artifact        []byte
+	ArtifactSHA256  string
+}
+
+type DeploymentArtifact struct {
+	Artifact       []byte
+	ArtifactSHA256 string
+	PlanFile       []byte
+	PlanSHA256     string
+}
+
+type PlanResult struct {
+	PlanText       string
+	PlanFile       []byte
+	PlanSHA256     string
+	ArtifactSHA256 string
 }
 
 type AuditEvent struct {
@@ -91,6 +114,10 @@ type JobStore interface {
 	Job(context.Context, string) (JobDetail, error)
 	CancelJob(context.Context, string) (Job, error)
 	ClaimJob(context.Context, string, time.Duration) (Job, error)
+	ClaimApprovedJob(context.Context, string, time.Duration) (Job, error)
+	DeploymentArtifact(context.Context, string) (DeploymentArtifact, error)
+	SavePlan(context.Context, string, string, PlanResult) error
+	ApprovePlan(context.Context, string, string, string, time.Duration) (JobDetail, error)
 	RenewLease(context.Context, string, string, time.Duration) error
 	StartStep(context.Context, string, string, string) (JobStep, error)
 	CompleteStep(context.Context, string, string, string, string, string) error
