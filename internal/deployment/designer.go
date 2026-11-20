@@ -114,6 +114,12 @@ func GenerateDesigner(value DesignerValue) ([]File, error) {
 		datastoreID := stringConfig(attached["storage"][0].Config, "datastoreId")
 		bridge := stringConfig(attached["network"][0].Config, "bridge")
 		templateID := stringConfig(attached["template"][0].Config, "templateId")
+		if node.Kind == "lxc" && templateID != "" && !strings.Contains(templateID, ":") {
+			return nil, fmt.Errorf("%s: для контейнера нужен LXC-шаблон (vztmpl, например local:vztmpl/debian.tar.zst), а выбран QEMU-шаблон %q", node.Label, templateID)
+		}
+		if node.Kind == "qemu" && strings.Contains(templateID, ":") {
+			return nil, fmt.Errorf("%s: для ВМ нужен QEMU-шаблон (VMID), а выбран LXC-шаблон %q", node.Label, templateID)
+		}
 		if nodeName == "" || datastoreID == "" || bridge == "" || templateID == "" || node.Kind == "qemu" && templateVMID(attached["template"][0]) < 100 {
 			return nil, fmt.Errorf("%s: заполните ноду, хранилище, сеть и корректный шаблон", node.Label)
 		}

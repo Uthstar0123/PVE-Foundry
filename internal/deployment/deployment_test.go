@@ -108,3 +108,25 @@ func TestDefaultsSelectUsableResources(t *testing.T) {
 		t.Fatalf("unexpected defaults: %+v", defaults)
 	}
 }
+
+func TestDesignerRejectsMismatchedTemplateTypes(t *testing.T) {
+	baseNodes := func(templateID string) []DesignerNode {
+		return []DesignerNode{
+			{ID: "vm", Kind: "lxc", Label: "foundry-500", Config: map[string]any{"vmid": 500, "nodeName": "node-a", "cores": 2, "memory": 1024, "disk": 8}},
+			{ID: "net", Kind: "network", Label: "network", Config: map[string]any{"bridge": "vmbr0"}},
+			{ID: "disk", Kind: "storage", Label: "storage", Config: map[string]any{"datastoreId": "data"}},
+			{ID: "tpl", Kind: "template", Label: "template", Config: map[string]any{"templateId": templateID}},
+		}
+	}
+	edges := []DesignerEdge{{Source: "net", Target: "vm"}, {Source: "disk", Target: "vm"}, {Source: "tpl", Target: "vm"}}
+
+	if _, err := GenerateDesigner(DesignerValue{Name: "deployment/test", Nodes: baseNodes("9000"), Edges: edges}); err == nil || !strings.Contains(err.Error(), "LXC-шаблон") {
+		t.Fatalf("ожидалась ошибка про LXC-шаблон для QEMU VMID, получено: %v", err)
+	}
+
+	qemuNodes := baseNodes("local:vztmpl/debian.tar.zst")
+	qemuNodes[0].Kind = "qemu"
+	if _, err := GenerateDesigner(DesignerValue{Name: "deployment/test", Nodes: qemuNodes, Edges: edges}); err == nil || !strings.Contains(err.Error(), "QEMU-шаблон") {
+		t.Fatalf("ожидалась ошибка про QEMU-шаблон для vztmpl, получено: %v", err)
+	}
+}
