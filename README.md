@@ -108,7 +108,7 @@ docs/                   ТЗ, план и результаты совмести�
 - Go 1.23+;
 - Node.js 20+ и npm;
 - PostgreSQL 16+;
-- OpenTofu для фактического Plan/Apply;
+- OpenTofu для фактического Plan/Apply (на Windows dev ставится автоматически в `.tools`, иначе — установите вручную);
 - Linux Runner с `bubblewrap` и разрешёнными user namespaces для production sandbox;
 - Microsoft Edge или Chromium для Playwright;
 - Proxmox VE не требуется для unit/API/browser mock-проверок.
@@ -176,21 +176,24 @@ export MANAGEMENT_RUNNER_TOKEN='replace-with-a-long-random-runner-token'
 go run ./cmd/server
 ```
 
-### Запуск Runner для разработки
+### Windows: автоматический запуск Runner
 
-В другом терминале, при установленном `tofu`:
+После `start-dev.bat` (Management и UI уже запущены) из корня проекта:
 
-```bash
-export RUNNER_ENVIRONMENT=development
-export RUNNER_MANAGEMENT_URL='http://127.0.0.1:8080'
-export RUNNER_RUNNER_TOKEN='replace-with-a-long-random-runner-token'
-export RUNNER_OPENTOFU_BINARY='tofu'
-export RUNNER_WORK_ROOT='./tmp/runner-jobs'
-export RUNNER_STATE_ROOT='./tmp/runner-state'
-go run ./cmd/runner
+```bat
+start-runner-dev.bat
 ```
 
-Runner token должен совпадать с `MANAGEMENT_RUNNER_TOKEN`. Для `bubblewrap` development не используется; production включается отдельно через `RUNNER_ENVIRONMENT=production`.
+Батник сам ставит переносимый Go и OpenTofu 1.13.9 (в `.tools`, при отсутствии), ждёт readiness Management на `:8080` и спрашивает только три вещи: Proxmox endpoint (например `https://192.168.0.10:8006`), полный API token вида `user@realm!token-id=secret` (вводится скрыто и не сохраняется) и опционально PEM-цепочку CA (пустой ввод включает `PROXMOX_VE_INSECURE=true` только для development). Runner token задаётся скриптом известным development-значением, совпадающим с dev Management, поэтому вводить его не нужно. Окно остаётся открытым — после запуска Runner сам забирает задачи из очереди. Ctrl+C останавливает Runner.
+
+Дополнительные режимы:
+
+```bat
+start-runner-dev.bat -SelfTest   :: проверить запуск без ввода данных
+start-runner-dev.bat -NoProxmox  :: поднять без provider credentials (реальные задачи выполнить не получится)
+```
+
+Убедитесь, что не запущен второй dev Runner: скрипт не позволит поднять дубликат. Runner token в development задан скриптом; в production совпадает с `MANAGEMENT_RUNNER_TOKEN`. `bubblewrap` в development не используется; production включается через `RUNNER_ENVIRONMENT=production`.
 
 UI в третьем терминале:
 
