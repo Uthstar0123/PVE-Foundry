@@ -34,6 +34,31 @@ func Run(service, prefix, defaultAddress string) {
 			log.Fatalf("initialize database: %v", err)
 		}
 		defer database.Close()
+		recoveryCtx, stopRecovery := context.WithCancel(context.Background())
+		defer stopRecovery()
+		recoverLeases := func() {
+			ctx, cancel := context.WithTimeout(recoveryCtx, 5*time.Second)
+			defer cancel()
+			failed, err := database.FailExpiredLeases(ctx)
+			if err != nil {
+				log.Printf("recover expired job leases: %v", err)
+			} else if failed > 0 {
+				log.Printf("marked %d expired jobs failed; outcomes require manual reconciliation", failed)
+			}
+		}
+		recoverLeases()
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-recoveryCtx.Done():
+					return
+				case <-ticker.C:
+					recoverLeases()
+				}
+			}
+		}()
 		var inventoryClients []api.InventoryClient
 		if cfg.ProxmoxAPIURL != "" {
 			client, clientErr := proxmox.NewClient(proxmox.Config{

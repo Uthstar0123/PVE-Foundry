@@ -238,6 +238,12 @@ docs/                   # Documentation
 
 Задачи переживают перезапуск панели, не дублируются и предоставляют достаточную информацию для диагностики.
 
+### Фактический статус
+
+Программный этап реализован и проверен локально: миграция `000003_jobs_queue`, PostgreSQL/Memory Store, claim через `FOR UPDATE SKIP LOCKED`, idempotency key + request hash, resource locks, leases, отмена, redaction, ротация 1000 событий, последние 200 событий в detail/WebSocket, скачивание журнала, аудит и UI. Recovery запускается при старте Management и каждые 30 секунд; expired lease становится `failed/lease_expired` без автоматического retry.
+
+Пройдены unit/API/WebSocket-тесты, PostgreSQL integration-сценарии restart и полного lifecycle, frontend tests/lint/build и desktop/mobile Playwright с mock API. Реальный Runner пока не получает задачи: это входит в этап 5. Публичный generic `POST /jobs` намеренно отсутствует.
+
 ---
 
 ## Этап 5. Runner и безопасный OpenTofu

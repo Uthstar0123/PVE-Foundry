@@ -5,6 +5,7 @@ go 1.23.0
 toolchain go1.23.12
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/csrf v1.7.3
 	github.com/jackc/pgx/v5 v5.7.6
