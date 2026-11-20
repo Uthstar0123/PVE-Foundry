@@ -1,7 +1,7 @@
 # План выполнения: PVE Foundry
 
 - **Версия:** 1.0
-- **Статус:** Утверждён владельцем 18.11.2026; этапы 0–2 завершены, программный контур этапа 3 реализован и ожидает проверки на реальном PVE
+- **Статус:** Утверждён владельцем 18.11.2026; этапы 0–2 и программный контур этапа 4 завершены; этапы 3 и 5 ожидают live-проверок на Proxmox и Runner VM
 - **Связанный документ:** `docs/technical-specification.md`
 - **Условие старта:** явное утверждение владельца
 
@@ -242,7 +242,7 @@ docs/                   # Documentation
 
 Программный этап реализован и проверен локально: миграция `000003_jobs_queue`, PostgreSQL/Memory Store, claim через `FOR UPDATE SKIP LOCKED`, idempotency key + request hash, resource locks, leases, отмена, redaction, ротация 1000 событий, последние 200 событий в detail/WebSocket, скачивание журнала, аудит и UI. Recovery запускается при старте Management и каждые 30 секунд; expired lease становится `failed/lease_expired` без автоматического retry.
 
-Пройдены unit/API/WebSocket-тесты, PostgreSQL integration-сценарии restart и полного lifecycle, frontend tests/lint/build и desktop/mobile Playwright с mock API. Реальный Runner пока не получает задачи: это входит в этап 5. Публичный generic `POST /jobs` намеренно отсутствует.
+Пройдены unit/API/WebSocket-тесты, PostgreSQL integration-сценарии restart и полного lifecycle, frontend tests/lint/build и desktop/mobile Playwright с mock API. Получение задач Runner реализовано в этапе 5. Публичный generic `POST /jobs` намеренно отсутствует.
 
 ---
 
@@ -283,6 +283,23 @@ docs/                   # Documentation
 ### Критерий завершения
 
 План и применение тестовой конфигурации выполняются только в Runner VM; apply невозможен для изменённой после подтверждения конфигурации.
+
+### Фактический статус 20.11.2026
+
+Локально реализованы:
+
+- исходящий Runner → Management по HTTPS с Bearer token; вместо mTLS выбрана эквивалентная схема: Runner проверяет TLS Management, Management проверяет отдельный Runner token;
+- polling, claim, lease renewal, cancellation, steps/events/complete; внешний административный listener Runner удалён;
+- загрузка artifact через UI, AES-GCM для artifact и бинарного плана в PostgreSQL, маскирование текстового плана;
+- проверки tar.gz, provider allowlist `bpg/proxmox=0.123.0`, запрет модулей, provisioner и удалённых backend;
+- `init/validate/plan/show`, сохранение бинарного плана, подтверждение по artifact SHA-256 и `apply` только после подтверждения;
+- постоянный local state по хешу `resourceId`, отдельный от временного workdir; workdir очищается;
+- production `bubblewrap` и systemd-шаблон с CPU/RAM/tasks/NOFILE/NPROC limits;
+- удаление Runner/Management credentials из окружения дочерних OpenTofu-процессов.
+
+Локально пройдены Go test/vet/build, Linux cross-build Runner, archive/provider/security и fake OpenTofu Plan/Apply/state-тесты, Memory/PostgreSQL lifecycle, frontend tests/lint/build/audit, Windows `start-dev.bat -SelfTest -NoProxmox -NoBrowser` и три Playwright mock-сценария без горизонтального overflow. Проверено, что подтверждение UI содержит SHA-256 отображаемого artifact.
+
+Ещё не проверены на Runner VM: production `bubblewrap`, user namespaces, systemd limits, HTTPS с приватным CA и фактический OpenTofu Plan/Apply этого приложения. Docker Socket и домашние каталоги исключены конфигурацией sandbox, но это также требует live-проверки. State остаётся незашифрованным на Runner с правами `0700`; защищённый backup относится к этапу 8. Дисковая квота должна настраиваться файловой системой и приложением пока не управляется. По общему Definition of Done этап остаётся в статусе live-проверки и не объявляется полностью принятым.
 
 ---
 

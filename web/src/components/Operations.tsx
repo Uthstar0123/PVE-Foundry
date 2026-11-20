@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Ban, CheckCircle2, CircleDashed, ClipboardList, Download, History, LoaderCircle, RefreshCw, ScrollText, ShieldCheck, XCircle } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { AuditEvent, Job, JobDetail } from '@/lib/api'
+import { DeploymentForm, PlanApproval } from './Deployments'
 
 const statusLabels: Record<string, string> = {
   queued: 'В очереди', waiting_approval: 'Ждёт подтверждения', running: 'Выполняется',
@@ -114,11 +115,12 @@ export function JobsPanel({ active }: { active: boolean }) {
         <button type="button" onClick={() => void loadJobs()} disabled={loading} className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-border bg-card px-4 text-sm font-medium hover:bg-secondary disabled:opacity-60"><RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />Синхронизировать задачи</button>
       </div>
       {error && <div role="alert" className="mt-5 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />{error}</div>}
+      {active && <DeploymentForm onCreated={(job) => { void loadJobs(); void selectJob(job.id) }} />}
       {!active ? <div className="mt-5 rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">Перейдите в этот раздел через меню, чтобы загрузить задачи.</div> : (
         <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.5fr)]">
           <div className="overflow-hidden rounded-lg border border-border bg-card">
             {loading && jobs.length === 0 ? <div role="status" className="p-6 text-sm text-muted-foreground"><LoaderCircle className="mb-2 size-5 animate-spin text-primary" />Загружаем задачи…</div> : jobs.length === 0 ? (
-              <div className="p-6"><CircleDashed className="size-6 text-muted-foreground" /><h3 className="mt-3 font-medium">Задач пока нет</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">Очередь готова. Запуск Plan и Apply появится после подключения изолированного Runner на следующем этапе.</p></div>
+              <div className="p-6"><CircleDashed className="size-6 text-muted-foreground" /><h3 className="mt-3 font-medium">Задач пока нет</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">Загрузите OpenTofu-архив выше или дождитесь подключения Runner для выполнения существующих задач.</p></div>
             ) : jobs.map((job) => (
               <button key={job.id} type="button" onClick={() => void selectJob(job.id)} className={`flex min-h-20 w-full cursor-pointer flex-col gap-2 border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-secondary/50 ${detail?.job.id === job.id ? 'bg-secondary/60' : ''}`}>
                 <span className="flex w-full items-center justify-between gap-3"><span className="font-mono text-sm font-medium">{job.operation}</span><Label value={job.status} /></span>
@@ -139,6 +141,7 @@ export function JobsPanel({ active }: { active: boolean }) {
                 {detail.job.cancelRequestedAt && <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" /><span>Отмена запрошена. Это не rollback: уже выполненные изменения могут остаться в Proxmox.</span></div>}
                 {detail.job.errorCode && <div className="mt-4 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm"><XCircle className="mt-0.5 size-4 shrink-0 text-destructive" /><span>{statusLabels[detail.job.errorCode] ?? detail.job.errorCode}. Результат внешней операции может быть неизвестен; автоматический повтор запрещён.</span></div>}
                 <dl className="mt-5 grid grid-cols-2 gap-4 text-sm sm:grid-cols-3"><div><dt className="text-xs text-muted-foreground">Создана</dt><dd className="mt-1">{time(detail.job.createdAt)}</dd></div><div><dt className="text-xs text-muted-foreground">Запущена</dt><dd className="mt-1">{time(detail.job.startedAt)}</dd></div><div><dt className="text-xs text-muted-foreground">Подписка</dt><dd className="mt-1">{streamState === 'connected' ? 'WebSocket активен' : streamState === 'reconnecting' ? 'Переподключение…' : 'Завершена'}</dd></div></dl>
+                <PlanApproval detail={detail} onApproved={(approved) => setDetail(approved)} />
                 <div className="mt-6"><h4 className="text-sm font-medium">Шаги</h4>{detail.steps.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">Runner ещё не сообщил шаги.</p> : <ol className="mt-3 space-y-2">{detail.steps.map((step) => <li key={step.id} className="flex flex-col gap-2 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2 text-sm">{step.status === 'succeeded' ? <CheckCircle2 className="size-4 text-primary" /> : <CircleDashed className="size-4 text-muted-foreground" />}{step.name}</span><Label value={step.status} /></li>)}</ol>}</div>
                 <div className="mt-6"><div className="flex items-center justify-between gap-3"><h4 className="text-sm font-medium">Журнал</h4><span className="text-xs text-muted-foreground">Последние {detail.events.length} событий</span></div>{detail.job.logsTruncated && <p className="mt-2 text-xs text-amber-500">Хранятся только последние 1000 событий; старые записи удалены ротацией.</p>}<pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background p-4 font-mono text-xs leading-6 text-secondary-foreground">{detail.events.length ? detail.events.map((event) => `${new Date(event.createdAt).toLocaleTimeString('ru-RU')} [${event.level}] ${event.message}`).join('\n') : 'Событий пока нет.'}</pre></div>
               </>

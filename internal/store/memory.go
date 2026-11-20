@@ -9,6 +9,12 @@ import (
 )
 
 // Memory is an isolated test double. Production always uses PostgreSQL.
+type approval struct {
+	userID     string
+	approvedAt time.Time
+	expiresAt  time.Time
+}
+
 type Memory struct {
 	mu          sync.Mutex
 	users       map[string]User
@@ -17,6 +23,10 @@ type Memory struct {
 	locks       map[string]string
 	steps       map[string][]JobStep
 	events      map[string][]JobEvent
+	artifacts   map[string]DeploymentArtifact
+	plans       map[string]string
+	planCreated map[string]time.Time
+	approvals   map[string]approval
 	nextEventID int64
 	Audits      []string
 	AuditEvents []AuditEvent
@@ -27,6 +37,8 @@ func NewMemory() *Memory {
 		users: make(map[string]User), sessions: make(map[[32]byte]Session),
 		jobs: make(map[string]Job), locks: make(map[string]string),
 		steps: make(map[string][]JobStep), events: make(map[string][]JobEvent),
+		artifacts: make(map[string]DeploymentArtifact), plans: make(map[string]string),
+		planCreated: make(map[string]time.Time), approvals: make(map[string]approval),
 	}
 }
 func (m *Memory) Ready(context.Context) error { return nil }

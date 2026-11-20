@@ -105,7 +105,16 @@ export type JobStep = {
 }
 
 export type JobEvent = { id: number; jobId: string; level: string; message: string; createdAt: string }
-export type JobDetail = { job: Job; steps: JobStep[]; events: JobEvent[] }
+export type JobDetail = {
+  job: Job
+  steps: JobStep[]
+  events: JobEvent[]
+  artifactSha256?: string
+  planText?: string
+  planSha256?: string
+  approvalExpiresAt?: string
+  approvedAt?: string
+}
 export type AuditEvent = { id: number; eventType: string; userId?: string; sourceIp: string; detail: string; createdAt: string }
 
 type ApiErrorBody = { error?: { code?: string; message?: string } }
@@ -155,6 +164,8 @@ export const api = {
   jobs: () => request<{ jobs: Job[] }>('/api/v1/jobs'),
   job: (id: string) => request<JobDetail>(`/api/v1/jobs/${id}`),
   cancelJob: (id: string) => mutation<{ job: Job; rollback: false }>(`/api/v1/jobs/${id}/cancel`, {}),
+  createDeployment: (body: { resourceId: string; idempotencyKey: string; artifact: string }) => mutation<{ job: Job; artifactSha256: string }>('/api/v1/deployments/opentofu', body),
+  approvePlan: (id: string, artifactSha256: string) => mutation<JobDetail>(`/api/v1/jobs/${id}/approve`, { artifactSha256 }),
   jobLogsURL: (id: string) => `/api/v1/jobs/${id}/logs`,
   audit: () => request<{ events: AuditEvent[] }>('/api/v1/audit'),
   setup: (body: { displayName: string; email: string; password: string }) => mutation<{ user: User }>('/api/v1/setup', body),

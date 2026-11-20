@@ -119,6 +119,14 @@ func (p *Postgres) EnqueueJob(ctx context.Context, input EnqueueJobInput) (Job, 
 		}
 		return Job{}, false, err
 	}
+	if len(input.Artifact) > 0 {
+		if !validSHA256(input.ArtifactSHA256) {
+			return Job{}, false, ErrPlanChanged
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO deployment_artifacts(job_id,artifact,artifact_sha256) VALUES($1,$2,$3)`, job.ID, input.Artifact, input.ArtifactSHA256); err != nil {
+			return Job{}, false, err
+		}
+	}
 	if err := recordAudit(ctx, tx, "job.queued", &job.InitiatorUserID, "job "+job.ID+" queued"); err != nil {
 		return Job{}, false, err
 	}
@@ -201,7 +209,13 @@ func (p *Postgres) Job(ctx context.Context, id string) (JobDetail, error) {
 		}
 		detail.Events = append(detail.Events, event)
 	}
-	return detail, rows.Err()
+	if err := rows.Err(); err != nil {
+		return JobDetail{}, err
+	}
+	if err := p.deploymentDetail(ctx, &detail, id); err != nil {
+		return JobDetail{}, err
+	}
+	return detail, nil
 }
 
 func (p *Postgres) CancelJob(ctx context.Context, id string) (Job, error) {

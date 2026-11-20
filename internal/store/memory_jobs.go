@@ -72,6 +72,14 @@ func (m *Memory) EnqueueJob(_ context.Context, input EnqueueJobInput) (Job, bool
 		CreatedAt: now, UpdatedAt: now}
 	m.jobs[job.ID] = job
 	m.locks[job.ResourceID] = job.ID
+	if len(input.Artifact) > 0 {
+		if !validSHA256(input.ArtifactSHA256) {
+			delete(m.jobs, job.ID)
+			delete(m.locks, job.ResourceID)
+			return Job{}, false, ErrPlanChanged
+		}
+		m.artifacts[job.ID] = DeploymentArtifact{Artifact: cloneBytes(input.Artifact), ArtifactSHA256: input.ArtifactSHA256}
+	}
 	m.Audits = append(m.Audits, "job.queued")
 	m.AuditEvents = append(m.AuditEvents, AuditEvent{ID: int64(len(m.AuditEvents) + 1), EventType: "job.queued", UserID: &job.InitiatorUserID, Detail: "job " + job.ID + " queued", CreatedAt: now})
 	return cloneJob(job), true, nil
@@ -115,7 +123,15 @@ func (m *Memory) Job(_ context.Context, id string) (JobDetail, error) {
 	if events == nil {
 		events = []JobEvent{}
 	}
-	return JobDetail{Job: cloneJob(job), Steps: steps, Events: events}, nil
+	detail := JobDetail{Job: cloneJob(job), Steps: steps, Events: events, PlanText: m.plans[id]}
+	if artifact, ok := m.artifacts[id]; ok {
+		detail.ArtifactSHA256, detail.PlanSHA256 = artifact.ArtifactSHA256, artifact.PlanSHA256
+	}
+	if approval, ok := m.approvals[id]; ok {
+		expires, approved := approval.expiresAt, approval.approvedAt
+		detail.ApprovalExpiresAt, detail.ApprovedAt = &expires, &approved
+	}
+	return detail, nil
 }
 
 func (m *Memory) CancelJob(_ context.Context, id string) (Job, error) {
