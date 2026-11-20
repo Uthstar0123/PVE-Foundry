@@ -42,7 +42,7 @@ func TestDeploymentDiscoveryAndPlainFileEndpoints(t *testing.T) {
 	}
 	var defaults struct {
 		NodeName string `json:"nodeName"`
-		NextVMID int `json:"nextVmid"`
+		NextVMID int    `json:"nextVmid"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&defaults); err != nil {
 		t.Fatal(err)
@@ -57,9 +57,9 @@ func TestDeploymentDiscoveryAndPlainFileEndpoints(t *testing.T) {
 	response = postJSON(t, client, server.URL+"/api/v1/deployments/opentofu/preflight", csrf, map[string]any{"files": files})
 	var preflight struct {
 		Variables []struct {
-			Name string `json:"name"`
-			Required bool `json:"required"`
-			Source string `json:"source"`
+			Name     string `json:"name"`
+			Required bool   `json:"required"`
+			Source   string `json:"source"`
 		} `json:"variables"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&preflight); err != nil {
