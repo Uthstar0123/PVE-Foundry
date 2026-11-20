@@ -131,6 +131,8 @@ type Inventory struct {
 	Storage     []Storage  `json:"storage"`
 	Networks    []Network  `json:"networks"`
 	Pools       []Pool     `json:"pools"`
+	Templates   []Template `json:"templates"`
+	NextVMID    int        `json:"nextVmid"`
 }
 
 func (c *Client) Inventory(ctx context.Context) (Inventory, error) {
@@ -165,6 +167,7 @@ func (c *Client) Inventory(ctx context.Context) (Inventory, error) {
 		}
 		inventory.Networks = append(inventory.Networks, networks...)
 	}
+	c.discover(ctx, &inventory)
 	inventory.CollectedAt = time.Now().UTC()
 	return inventory, nil
 }

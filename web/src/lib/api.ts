@@ -73,7 +73,38 @@ export type Inventory = {
   storage: ProxmoxStorage[]
   networks: ProxmoxNetwork[]
   pools: ProxmoxPool[]
+  templates?: ProxmoxTemplate[]
+  nextVmid?: number
 }
+
+export type ProxmoxTemplate = {
+  id: string
+  vmid?: number
+  name: string
+  type: 'qemu' | 'lxc' | string
+  node?: string
+  storage?: string
+}
+
+export type DeploymentDefaults = {
+  nodeName: string
+  poolId: string
+  datastoreId: string
+  bridge: string
+  nextVmid: number
+  templates: ProxmoxTemplate[]
+}
+
+export type DeploymentVariable = {
+  name: string
+  required: boolean
+  sensitive: boolean
+  source: 'auto' | 'default' | 'file' | 'required'
+  value?: unknown
+}
+
+export type DeploymentFile = { name: string; content: string }
+export type DeploymentDesign = import('@/components/InfrastructureDesigner').DesignerValue
 
 export type Job = {
   id: string
@@ -164,7 +195,10 @@ export const api = {
   jobs: () => request<{ jobs: Job[] }>('/api/v1/jobs'),
   job: (id: string) => request<JobDetail>(`/api/v1/jobs/${id}`),
   cancelJob: (id: string) => mutation<{ job: Job; rollback: false }>(`/api/v1/jobs/${id}/cancel`, {}),
-  createDeployment: (body: { resourceId: string; idempotencyKey: string; artifact: string }) => mutation<{ job: Job; artifactSha256: string }>('/api/v1/deployments/opentofu', body),
+  deploymentDefaults: () => request<DeploymentDefaults>('/api/v1/deployments/defaults'),
+  preflightDeployment: (files: DeploymentFile[]) => mutation<{ defaults: DeploymentDefaults; variables: DeploymentVariable[] }>('/api/v1/deployments/opentofu/preflight', { files }),
+  createDeployment: (body: { resourceId: string; idempotencyKey: string; artifact?: string; files?: DeploymentFile[]; variables?: Record<string, unknown> }) => mutation<{ job: Job; artifactSha256: string }>('/api/v1/deployments/opentofu', body),
+  createDesignerDeployment: (body: { resourceId: string; idempotencyKey: string; design: DeploymentDesign }) => mutation<{ job: Job; artifactSha256: string }>('/api/v1/deployments/opentofu/designer', body),
   approvePlan: (id: string, artifactSha256: string) => mutation<JobDetail>(`/api/v1/jobs/${id}/approve`, { artifactSha256 }),
   jobLogsURL: (id: string) => `/api/v1/jobs/${id}/logs`,
   audit: () => request<{ events: AuditEvent[] }>('/api/v1/audit'),
