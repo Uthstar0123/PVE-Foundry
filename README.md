@@ -184,7 +184,7 @@ go run ./cmd/server
 start-runner-dev.bat
 ```
 
-Батник сам ставит переносимый Go и OpenTofu 1.13.9 (в `.tools`, при отсутствии), ждёт readiness Management на `:8080` и спрашивает только три вещи: Proxmox endpoint (например `https://192.168.0.10:8006`), полный API token вида `user@realm!token-id=secret` (вводится скрыто и не сохраняется) и опционально PEM-цепочку CA (пустой ввод включает `PROXMOX_VE_INSECURE=true` только для development). Runner token задаётся скриптом известным development-значением, совпадающим с dev Management, поэтому вводить его не нужно. Окно остаётся открытым — после запуска Runner сам забирает задачи из очереди. Ctrl+C останавливает Runner.
+Батник сам ставит переносимый Go и OpenTofu 1.13.9 (в `.tools`, при отсутствии), ждёт readiness Management на `:8080` и спрашивает только три вещи: Proxmox endpoint (например `https://192.168.0.10:8006`), данные API токена — отдельно `user@realm`, ID токена и секрет (секрет вводится скрыто, ничего не сохраняется; либо вставьте сразу полную строку `user@realm!token-id=secret` в первое поле) и опционально PEM-цепочку CA (пустой ввод включает `PROXMOX_VE_INSECURE=true` только для development). Runner token задаётся скриптом известным development-значением, совпадающим с dev Management, поэтому вводить его не нужно. Окно остаётся открытым — после запуска Runner сам забирает задачи из очереди. Ctrl+C останавливает Runner.
 
 Дополнительные режимы:
 

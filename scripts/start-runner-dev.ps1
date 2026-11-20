@@ -110,12 +110,30 @@ try {
         }
         $env:PROXMOX_VE_ENDPOINT = $endpoint.TrimEnd('/') + '/'
 
-        $secureToken = Read-Host 'Proxmox API token полностью (user@pve!token=secret)' -AsSecureString
-        $token = [System.Net.NetworkCredential]::new('', $secureToken).Password.Trim()
-        if ($token -notmatch '^[^!@=]+@[^!@=]+![^!=]+=[^=]+$') {
-            throw 'Токен должен иметь формат user@pve!token=secret.'
+        # Можно вставить сразу полный токен user@realm!id=secret, а можно ответить на три поля по отдельности.
+        $identity = (Read-Host 'Пользователь токена (например orchestrator-rw@pve; можно вставить и полный токен вида user@pve!OpenTofu=secret)').Trim()
+        if ($identity -match '^([^!@=]+@[^!@=]+)!(.+?)=(.+)$') {
+            $userRealm = $Matches[1]
+            $tokenId = $Matches[2]
+            $tokenSecret = $Matches[3]
         }
+        else {
+            $userRealm = $identity
+            if ($userRealm -notmatch '^[^!@=]+@[^!@=]+$') {
+                throw 'Укажите пользователя в формате user@realm, например orchestrator-rw@pve.'
+            }
+            $tokenId = (Read-Host 'ID токена (например OpenTofu)').Trim()
+            if ($tokenId -notmatch '^[^!=]+$') {
+                throw 'ID токена не должно содержать ! и =.'
+            }
+            $secureSecret = Read-Host 'Секрет токена' -AsSecureString
+            $tokenSecret = [System.Net.NetworkCredential]::new('', $secureSecret).Password.Trim()
+            if ([string]::IsNullOrWhiteSpace($tokenSecret)) { throw 'Секрет токена не может быть пустым.' }
+            Remove-Variable secureSecret -ErrorAction SilentlyContinue
+        }
+        $token = "$userRealm!$tokenId=$tokenSecret"
         $env:PROXMOX_VE_API_TOKEN = $token
+        Write-Host "Токен собран: $userRealm!$tokenId=***" -ForegroundColor Green
 
         $caFile = (Read-Host 'PEM CA Proxmox (Enter — insecure dev mode)').Trim()
         if (-not [string]::IsNullOrWhiteSpace($caFile)) {
@@ -127,7 +145,7 @@ try {
             Remove-Item Env:PROXMOX_VE_CA_FILE -ErrorAction SilentlyContinue
             $env:PROXMOX_VE_INSECURE = 'true'
         }
-        Remove-Variable secureToken, token, endpoint, parsedEndpoint, caFile -ErrorAction SilentlyContinue
+        Remove-Variable token, tokenSecret, tokenId, userRealm, identity, endpoint, parsedEndpoint, caFile -ErrorAction SilentlyContinue
     }
 
     Write-Host "Management:  $env:RUNNER_MANAGEMENT_URL"
